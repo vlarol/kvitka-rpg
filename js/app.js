@@ -145,7 +145,12 @@ function mapHTML(clickable) {
   for (const c of CHARACTERS) {
     const st = S.chars[c.id]; if (!st) continue;
     const seat = S.seats[c.id];
-    if (!seat && !IS_GM_PAGE) continue;
+    if (!IS_GM_PAGE) {
+      // гравець бачить лише себе і тих, хто в одній кімнаті з ним
+      if (!seat) continue;
+      const mine = S.chars[myCharId()];
+      if (c.id !== myCharId() && (!mine || mine.loc !== st.loc)) continue;
+    }
     (tokensByRoom[st.loc] ||= []).push(c);
   }
   const me = myCharId();
@@ -168,7 +173,7 @@ function mapHTML(clickable) {
   const outside = ROOM_BY_ID.OUT.rects[0];
   return `<div class="map"><img src="assets/ship.png" alt="Схема корабля STS-187">${rooms}
     <div class="outside-label" style="left:${outside[0]}%;top:${outside[1] + outside[3] + 0.5}%">ЗОВНІ</div>${tokens}</div>
-    <div class="map-hint">${clickable ? (IS_GM_PAGE ? 'Оберіть персонажа (фішку або картку), потім клікніть кімнату' : 'Клікніть кімнату, щоб перейти') : ''}</div>`;
+    <div class="map-hint">${clickable ? (IS_GM_PAGE ? 'Оберіть персонажа (фішку або картку), потім клікніть кімнату' : 'Клікніть кімнату, щоб перейти. Інших видно, лише коли ви в одній кімнаті') : ''}</div>`;
 }
 
 function currentRoom() {
