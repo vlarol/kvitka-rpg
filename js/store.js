@@ -3,17 +3,20 @@ import { firebaseConfig } from './config.js';
 
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
 
-export async function createStore() {
-  return firebaseConfig.apiKey ? firebaseStore() : demoStore();
+export async function createStore(opts = {}) {
+  return firebaseConfig.apiKey ? firebaseStore(opts) : demoStore();
 }
 
-async function firebaseStore() {
+async function firebaseStore(opts) {
   const { initializeApp } = await import(FB + 'firebase-app.js');
   const A = await import(FB + 'firebase-auth.js');
   const D = await import(FB + 'firebase-database.js');
-  const app = initializeApp(firebaseConfig);
+  // Окремий екземпляр для гравців, щоб вкладка гравця не підхоплювала Google-вхід ведучого в цьому ж браузері.
+  const app = opts.perTab ? initializeApp(firebaseConfig, 'player') : initializeApp(firebaseConfig);
   const auth = A.getAuth(app);
   const db = D.getDatabase(app);
+  // Гравці: окрема особа на кожну вкладку (можна грати кількома персонажами з одного браузера).
+  if (opts.perTab) await A.setPersistence(auth, A.browserSessionPersistence);
   const first = await new Promise(res => { const off = A.onAuthStateChanged(auth, u => { off(); res(u); }); });
 
   const s = {

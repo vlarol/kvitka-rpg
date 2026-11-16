@@ -504,6 +504,7 @@ const actions = {
     const name = ($('#joinName').value || '').trim();
     if (!name) { $('#joinErr').textContent = 'Введіть ім\'я.'; return; }
     localStorage.setItem('kvitka-name', name);
+    if (myCharId()) { $('#joinErr').textContent = 'Ви вже граєте за іншого персонажа.'; return; }
     const ok = await store.claim(`game/seats/${UI.pick}`, { uid: store.uid, name, ts: Date.now() });
     if (!ok) { $('#joinErr').textContent = 'Цього персонажа щойно зайняли. Оберіть іншого.'; UI.pick = null; }
     else await logPush(`${name} на борту.`, 'system', UI.pick);
@@ -636,7 +637,7 @@ function toast(msg) {
 // ---------- старт ----------
 (async () => {
   try {
-    store = await createStore();
+    store = await createStore({ perTab: !IS_GM_PAGE });
     if (store.mode === 'demo') document.body.insertAdjacentHTML('beforeend',
       `<div class="demo-flag">ДЕМО-РЕЖИМ · без Firebase · ${IS_GM_PAGE ? '<a href="./">екран гравця</a>' : '<a href="?gm">пульт ведучого</a>'}</div>`);
     if (IS_GM_PAGE) { await bootGM(); closeIntro(true); } else { await bootPlayer(); introReady(); }
