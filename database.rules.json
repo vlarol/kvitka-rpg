@@ -1,0 +1,36 @@
+{
+  "rules": {
+    "admins": {
+      "$uid": { ".read": "auth != null && auth.uid === $uid", ".write": false }
+    },
+    "game": {
+      "state":  { ".read": "auth != null", ".write": "root.child('admins').child(auth.uid).exists()" },
+      "chars": {
+        ".read": "auth != null",
+        ".write": "root.child('admins').child(auth.uid).exists()",
+        "$c": { ".write": "auth != null && root.child('game/seats').child($c).child('uid').val() === auth.uid" }
+      },
+      "seats": {
+        ".read": "auth != null",
+        ".write": "root.child('admins').child(auth.uid).exists()",
+        "$c": {
+          ".write": "auth != null && ((!data.exists() && newData.child('uid').val() === auth.uid) || (data.child('uid').val() === auth.uid && !newData.exists()))"
+        }
+      },
+      "log": {
+        ".read": "auth != null",
+        ".write": "root.child('admins').child(auth.uid).exists()",
+        "$id": { ".write": "auth != null && !data.exists() && newData.child('uid').val() === auth.uid" }
+      },
+      "secrets": {
+        ".read": "root.child('admins').child(auth.uid).exists()",
+        ".write": "root.child('admins').child(auth.uid).exists()",
+        "$c": { ".read": "auth != null && root.child('game/seats').child($c).child('uid').val() === auth.uid" }
+      },
+      "gm": {
+        ".read": "root.child('admins').child(auth.uid).exists()",
+        ".write": "root.child('admins').child(auth.uid).exists()"
+      }
+    }
+  }
+}
