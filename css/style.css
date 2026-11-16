@@ -322,3 +322,27 @@ h4::after { content: '///'; color: var(--orange); letter-spacing: 0; font-weight
 @keyframes pulseTurn { 50% { box-shadow: 0 0 18px rgba(255,107,26,.6); } }
 .turn-dot { font-size: 10px; background: var(--orange); color: #120a05; padding: 1px 5px; letter-spacing: .1em; vertical-align: middle; }
 .entry.k-turn { border-left-color: var(--orange); background: rgba(255,107,26,.07); }
+
+/* доступ */
+.room.locked:hover { border-color: var(--danger) !important; background: rgba(255,75,58,.18) !important; cursor: not-allowed; }
+.modal-bg { position: fixed; inset: 0; z-index: 65; background: rgba(0,0,0,.6); }
+.modal { position: fixed; z-index: 66; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, 92vw); background: var(--panel); border: 1px solid var(--danger);
+  padding: 22px; display: flex; flex-direction: column; gap: 10px; clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px); }
+.modal small { font-family: var(--head); letter-spacing: .24em; color: var(--danger); }
+.modal h2 { margin: 0; font-family: var(--head); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+.modal p { margin: 0; }
+.opt { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; text-transform: none; padding: 10px 14px; }
+.opt b { font-family: var(--head); letter-spacing: .1em; color: var(--orange); font-weight: 500; }
+.opt span { font-family: var(--font); font-size: 12px; color: var(--muted); letter-spacing: 0; text-transform: none; }
+.opt:hover { border-color: var(--orange); }
+.small-note { font-size: 11px; }
+.keys { color: var(--orange); }
+.toast.good { background: #1f6b52; }
+.req { border: 1px solid var(--orange); padding: 8px 10px; margin-bottom: 6px; background: rgba(255,107,26,.06); }
+.inbox { display: flex; flex-direction: column; gap: 4px; font-size: 12px; max-height: 180px; overflow-y: auto; }
+.inbox div { border-left: 2px solid var(--line); padding: 3px 8px; }
+.inbox .ok { border-left-color: var(--ok); }
+.inbox .bad { border-left-color: var(--danger); }
+.keyrow { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 4px 0; font-size: 11px; }
+.keyrow > span { color: var(--muted); font-family: var(--head); letter-spacing: .12em; font-size: 10px; }
+.keyrow select { background: #0b0d10; color: var(--text); border: 1px solid var(--line); font: inherit; font-size: 11px; padding: 1px 4px; max-width: 150px; }

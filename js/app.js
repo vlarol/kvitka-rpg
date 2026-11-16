@@ -15,7 +15,7 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const IS_GM_PAGE = /[?&#]gm\b/.test(location.search + location.hash);
 
 let store;
-const S = { seats: {}, chars: {}, state: null, log: {}, secret: null, secrets: {}, gm: {}, isAdmin: false };
+const S = { requests: {}, seats: {}, chars: {}, state: null, log: {}, secret: null, secrets: {}, gm: {}, isAdmin: false };
 const UI = {
   pick: null, sheetOpen: true, secretOpen: false, target: null, skill: null,
   adv: false, dis: false, lastRoll: null, panicPrompt: false, cutTs: null, dismissedCut: null,
@@ -157,7 +157,8 @@ function mapHTML(clickable) {
   let rooms = '';
   for (const r of ROOMS) {
     for (const [l, t, w, h] of r.rects) {
-      rooms += `<button class="room ${r.outside ? 'outside' : ''}" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%" data-act="${clickable ? 'room' : ''}" data-room="${r.id}" title="${esc(r.id + ' — ' + r.name)}"></button>`;
+      const locked = !IS_GM_PAGE && myCharId() && !canEnter(myCharId(), r.id);
+      rooms += `<button class="room ${r.outside ? 'outside' : ''} ${locked ? 'locked' : ''}" style="left:${l}%;top:${t}%;width:${w}%;height:${h}%" data-act="${clickable ? 'room' : ''}" data-room="${r.id}" title="${esc(r.id + ' — ' + r.name)}"></button>`;
     }
   }
   let tokens = '';
@@ -174,6 +175,43 @@ function mapHTML(clickable) {
   return `<div class="map"><img src="assets/ship.png" alt="Схема корабля STS-187">${rooms}
     <div class="outside-label" style="left:${outside[0]}%;top:${outside[1] + outside[3] + 0.5}%">ЗОВНІ</div>${tokens}</div>
     <div class="map-hint">${clickable ? (IS_GM_PAGE ? 'Оберіть персонажа (фішку або картку), потім клікніть кімнату' : (turnId() && turnId() !== myCharId() ? 'Зараз хід ' + CHAR_BY_ID[turnId()].name + ' — переходити можна у свій хід' : 'Клікніть кімнату, щоб перейти. Інших видно, лише коли ви в одній кімнаті')) : ''}</div>`;
+}
+
+// ---------- доступ ----------
+function canEnter(cid, rid) {
+  const r = ROOM_BY_ID[rid]; if (!r) return false;
+  const st = S.chars[cid] || {};
+  if (r.needFrom && st.loc !== r.needFrom && st.loc !== rid) return false;
+  if (r.access === 'all') return true;
+  return r.access.includes(cid) || !!(st.keys && st.keys[rid]);
+}
+function accessList(cid) {
+  const st = S.chars[cid] || {};
+  const own = ROOMS.filter(r => r.access !== 'all' && r.access.includes(cid)).map(r => r.id);
+  const keys = Object.keys(st.keys || {});
+  return { own, keys };
+}
+function gmNote(text) {
+  return store.push('game/gm/inbox', { uid: store.uid, charId: myCharId(), text });
+}
+
+function lockModal(rid) {
+  const r = ROOM_BY_ID[rid]; const id = myCharId(); const c = CHAR_BY_ID[id];
+  const tech = bestSkill(c, ['Комп\'ютери', 'Ремонт механізмів', 'Інженерія']);
+  const force = bestSkill(c, ['Атлетика', 'Рукопашний бій']);
+  const needWay = r.needFrom && S.chars[id].loc !== r.needFrom;
+  $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModal"></div><div class="modal">
+    <small>ДОСТУП ЗАБОРОНЕНО</small><h2>${esc(r.id)} · ${esc(r.name)}</h2>
+    ${needWay ? `<p>Туди можна потрапити лише через ${esc(ROOM_BY_ID[r.needFrom].id + ' · ' + ROOM_BY_ID[r.needFrom].name)}.</p>` : `
+    <p class="muted">${r.hard ? 'Посилений замок: злом з перешкодою.' : 'Звичайний електронний замок.'} ${r.id === 'B1' ? '' : 'Камера Ґрети бачить двері.'}</p>
+    <button class="ghost opt" data-act="hack" data-room="${rid}" data-mode="tech"><b>ЗЛАМАТИ ЗАМОК</b><span>Інтелект ${c.stats.int}${tech ? ' + ' + esc(tech[0]) + ' ' + tech[1] : ''} = ${c.stats.int + (tech ? tech[1] : 0)}${r.hard ? ' [−]' : ''}</span></button>
+    <button class="ghost opt" data-act="hack" data-room="${rid}" data-mode="force"><b>ВИБИТИ ДВЕРІ</b><span>Сила ${c.stats.str}${force ? ' + ' + esc(force[0]) + ' ' + force[1] : ''} = ${c.stats.str + (force ? force[1] : 0)} [−] · гучно, Ґрета точно дізнається</span></button>
+    <button class="ghost opt" data-act="askGreta" data-room="${rid}"><b>ПОПРОСИТИ ҐРЕТУ</b><span>Запит піде ведучому. Ґрета вирішить сама.</span></button>
+    <p class="muted small-note">Ключ-карту можна отримати в грі — вкрасти, виміняти, отримати від капітана. Ведучий додасть її вам.</p>`}
+    <button class="ghost small" data-act="closeModal">СКАСУВАТИ</button></div>`;
+}
+function bestSkill(c, names) {
+  return c.skills.filter(([n]) => names.includes(n)).sort((a, b) => b[1] - a[1])[0] || null;
 }
 
 function turnId() { return (S.state && S.state.turn && S.seats[S.state.turn]) ? S.state.turn : null; }
@@ -281,7 +319,7 @@ function renderPlayer() {
       <div id="greta"></div>
       <main class="layout"><section class="mapcol" id="map"></section>
         <aside class="sheet" id="sheet"></aside><aside class="logcol"><h4>ЖУРНАЛ</h4><div id="log" class="log"></div></aside></main>
-      <footer class="tray" id="tray"></footer><div id="cut"></div></div>`;
+      <footer class="tray" id="tray"></footer><div id="cut"></div><div id="modal"></div></div>`;
   }
   const c = CHAR_BY_ID[id];
   $('#o2').innerHTML = o2HTML();
@@ -355,6 +393,7 @@ function renderSheet() {
     <h4>НАВИЧКИ <span class="muted">— одна на кидок</span></h4><div class="chips">${skills}</div>
     <h4>СПОРЯДЖЕННЯ</h4><ul class="gear">${c.gear.map(g => `<li>${esc(g)}</li>`).join('')}</ul>
     <h4>ОСОБЛИВІСТЬ</h4><p class="trait">${esc(c.trait)}</p>
+    <h4>ДОСТУП</h4><p class="trait">${(() => { const a = accessList(id); return `Загальні зони${a.own.length ? ', ' + a.own.join(', ') : ''}${a.keys.length ? `<br><span class="keys">Ключі: ${a.keys.map(esc).join(', ')}</span>` : ''}`; })()}</p>
     <h4>ТАЄМНА ЦІЛЬ ${S.secret ? `<button class="ghost small" data-act="secret">${UI.secretOpen ? 'СХОВАТИ' : 'ПОКАЗАТИ'}</button>` : ''}</h4>${secret}
     <button class="ghost small leave" data-act="leave">Звільнити персонажа</button>`;
 }
@@ -383,6 +422,14 @@ async function bootPlayer() {
       S._secretFor = id;
       if (S._secretOff) S._secretOff();
       S._secretOff = store.on(`game/secrets/${id}`, s => { S.secret = s && s.text; renderSheet(); });
+      if (S._reqOff) S._reqOff();
+      S._reqOff = store.on(`game/requests/${id}`, rq => {
+        if (!rq || rq.status === 'pending') return;
+        const r = ROOM_BY_ID[rq.room];
+        toast(rq.status === 'granted' ? `Ґрета: доступ до ${r ? r.name : rq.room} надано.` : `Ґрета: у доступі відмовлено.`, rq.status === 'granted');
+        if (rq.status === 'granted') { UI.view = 'loc'; UI.imgIdx = 0; }
+        store.remove(`game/requests/${id}`);
+      });
     }
     if (!$('#playerRoot') || !id) $('#app').innerHTML = '';
     renderPlayer();
@@ -426,6 +473,8 @@ function renderCrew() {
         <span>W</span><b>${st.wounds ?? 0}/2</b><button class="ghost xs" data-act="gWound" data-id="${c.id}" data-d="1">+</button><button class="ghost xs" data-act="gWound" data-id="${c.id}" data-d="-1">−</button></div>
       <div class="crew-row"><span>STRESS</span><button class="ghost xs" data-act="gStress" data-id="${c.id}" data-d="-1">−</button><b class="${(st.stress || 0) >= 10 ? 'hot' : ''}">${st.stress ?? '?'}</b><button class="ghost xs" data-act="gStress" data-id="${c.id}" data-d="1">+</button>
         <span>MIN</span><b>${st.minStress ?? 2}</b><button class="ghost xs" data-act="gMin" data-id="${c.id}" data-d="1">+</button></div>
+      <div class="keyrow"><span>КЛЮЧІ</span>${Object.keys(st.keys || {}).map(k => `<button class="ghost xs" data-act="takeKey" data-id="${c.id}" data-room="${k}" title="забрати">${esc(k)} ✕</button>`).join('') || '<i class="muted">—</i>'}
+        <select id="key-${c.id}"><option value="">+ ключ</option>${ROOMS.filter(r => r.access !== 'all' && !r.access.includes(c.id)).map(r => `<option value="${r.id}">${r.id} · ${esc(r.name)}</option>`).join('')}</select><button class="ghost xs" data-act="giveKey" data-id="${c.id}">дати</button></div>
       <details data-sec="${c.id}" ${UI.openSec.has(c.id) ? 'open' : ''}><summary>ТАЄМНА ЦІЛЬ ${sec ? '✓' : ''}</summary><textarea id="sec-${c.id}" rows="5" placeholder="Текст побачить тільки гравець цього персонажа">${esc(sec)}</textarea>
         <button class="ghost small" data-act="saveSecret" data-id="${c.id}">ЗБЕРЕГТИ</button></details>
       ${seat ? `<button class="ghost xs" data-act="setTurn" data-id="${c.id}">дати хід</button> <button class="ghost xs" data-act="kick" data-id="${c.id}">звільнити місце</button>` : ''}
@@ -439,7 +488,13 @@ function renderGMControls() {
   const playing = S.state && S.state.cutscene;
   const hidden = Object.entries((S.gm && S.gm.log) || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 6);
   const keepOpen = el.querySelector('#gretaText') ? el.querySelector('#gretaText').value : '';
+  const reqs = Object.entries(S.requests || {}).filter(([, r]) => r && r.status === 'pending');
+  const inbox = Object.entries((S.gm && S.gm.inbox) || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 8);
   el.innerHTML = `
+    ${reqs.length ? `<h4>ЗАПИТИ ДО ҐРЕТИ</h4>${reqs.map(([cid, r]) => `<div class="req"><b style="color:${CHAR_BY_ID[cid].color}">${esc(CHAR_BY_ID[cid].name)}</b> хоче в ${esc(r.room)} · ${esc((ROOM_BY_ID[r.room] || {}).name || '')}
+      <div class="row"><button class="primary xs" data-act="grant" data-id="${cid}">ДОЗВОЛИТИ</button><button class="danger xs" data-act="deny" data-id="${cid}">ВІДМОВИТИ</button></div></div>`).join('')}` : ''}
+    <h4>ДОСТУП: СПРОБИ ЗЛОМУ ${inbox.length ? '<button class="ghost xs" data-act="clearInbox">очистити</button>' : ''}</h4>
+    <div class="inbox">${inbox.map(([, v]) => `<div class="${/УСПІХ/.test(v.text) ? 'ok' : 'bad'}"><b style="color:${v.charId ? CHAR_BY_ID[v.charId].color : 'inherit'}">${esc(v.charId ? CHAR_BY_ID[v.charId].name : '?')}</b> ${esc(v.text)}</div>`).join('') || '<span class="muted">—</span>'}</div>
     <h4>ҐРЕТА КАЖЕ</h4>
     <textarea id="gretaText" rows="2" placeholder="Текст з'явиться в усіх на екрані">${esc(keepOpen)}</textarea>
     <div class="row"><label class="chk"><input type="checkbox" id="gretaVoice" checked> озвучити</label><button class="primary small" data-act="gretaSay">СКАЗАТИ</button><button class="ghost small" data-act="gretaClear">ПРИБРАТИ</button></div>
@@ -493,6 +548,7 @@ async function bootGM() {
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
   subs.push(store.on('game/secrets', v => { S.secrets = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('textarea[id^=sec-]')) renderCrew(); }));
+  subs.push(store.on('game/requests', v => { S.requests = v || {}; if ($('#gmRoot')) renderGMControls(); }));
   subs.push(store.on('game/gm', v => { S.gm = v || {}; if ($('#gmRoot')) renderGMControls(); }));
   subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('#ctl input, #ctl textarea')) renderGMControls(); }, 120));
 }
@@ -542,10 +598,51 @@ const actions = {
     const id = IS_GM_PAGE ? UI.gmSel : myCharId();
     if (!id) return;
     if (!IS_GM_PAGE && turnId() && turnId() !== id) { toast('Зараз не ваш хід — переходити можна лише у свій хід.'); return; }
+    if (!IS_GM_PAGE && S.chars[id].loc === rid) { UI.view = 'loc'; renderMain(true); return; }
+    if (!IS_GM_PAGE && !canEnter(id, rid)) { lockModal(rid); return; }
     if (!IS_GM_PAGE) { UI.view = 'loc'; UI.imgIdx = 0; }
     await store.update(`game/chars/${id}`, { loc: rid });
     renderMain(true);
   },
+  closeModal() { $('#modal').innerHTML = ''; },
+  async hack(el) {
+    const rid = el.dataset.room; const force = el.dataset.mode === 'force';
+    const id = myCharId(); const c = CHAR_BY_ID[id]; const st = S.chars[id]; const r = ROOM_BY_ID[rid];
+    const sk = force ? bestSkill(c, ['Атлетика', 'Рукопашний бій']) : bestSkill(c, ['Комп\'ютери', 'Ремонт механізмів', 'Інженерія']);
+    const target = (force ? c.stats.str : c.stats.int) + (sk ? sk[1] : 0);
+    const dis = force || r.hard;
+    const rolls = dis ? [d100(), d100()] : [d100()];
+    const ranks = rolls.map(x => evalCheck(x, target));
+    const i = dis ? (ranks[0] <= ranks[1] ? 0 : 1) : 0;
+    const rank = ranks[i]; const ok = rank >= 2;
+    const what = force ? 'вибити двері' : 'зламати замок';
+    if (!ok) await store.update(`game/chars/${id}`, { stress: clamp((st.stress || 2) + 1, st.minStress || 2, 20) });
+    UI.lastRoll = { big: pad2(rolls[i]), label: ok ? 'ДВЕРІ ВІДЧИНЕНО' : 'НЕ ВДАЛОСЯ', rank, sub: `${force ? 'Сила' : 'Інтелект'}${sk ? ' + ' + sk[0] : ''} = ${target}${dis ? ' [−]' : ''}` };
+    if (rank === 0) UI.panicPrompt = true;
+    await gmNote(`${ok ? 'УСПІХ' : 'ПРОВАЛ'}: спроба ${what} ${r.id} (${r.name}). Кидок ${rolls.map(pad2).join('/')} проти ${target}${dis ? ' [−]' : ''}.${force ? ' ГУЧНО.' : ''}`);
+    $('#modal').innerHTML = '';
+    if (ok) { UI.view = 'loc'; UI.imgIdx = 0; await store.update(`game/chars/${id}`, { loc: rid }); renderMain(true); }
+    else toast(force ? 'Двері не піддалися. Шум чути далеко.' : 'Замок не піддався. +1 Стрес');
+    renderTray();
+  },
+  async askGreta(el) {
+    const rid = el.dataset.room; const id = myCharId();
+    await store.set(`game/requests/${id}`, { uid: store.uid, room: rid, status: 'pending', ts: Date.now() });
+    $('#modal').innerHTML = '';
+    toast('Запит надіслано. Ґрета розглядає…');
+  },
+  async grant(el) {
+    const cid = el.dataset.id; const req = S.requests[cid];
+    await store.update(`game/chars/${cid}`, { loc: req.room });
+    await store.update(`game/requests/${cid}`, { status: 'granted' });
+  },
+  async deny(el) { await store.update(`game/requests/${el.dataset.id}`, { status: 'denied' }); },
+  async giveKey(el) {
+    const cid = el.dataset.id; const rid = $('#key-' + cid).value; if (!rid) return;
+    await store.update(`game/chars/${cid}/keys`, { [rid]: true });
+  },
+  async takeKey(el) { await store.remove(`game/chars/${el.dataset.id}/keys/${el.dataset.room}`); },
+  async clearInbox() { await store.remove('game/gm/inbox'); },
   view(el) { UI.view = el.dataset.v; renderMain(true); },
   nextImg() { UI.imgIdx++; renderMain(true); },
   voice() { UI.voice = !UI.voice; if (UI.voice) speak('Голос Ґрети увімкнено.'); renderPlayer(); },
@@ -629,8 +726,8 @@ function closeIntro(now) {
 }
 actions.enter = () => { closeIntro(); if ('speechSynthesis' in window) speechSynthesis.getVoices(); };
 
-function toast(msg) {
-  const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+function toast(msg, good) {
+  const t = document.createElement('div'); t.className = 'toast' + (good ? ' good' : ''); t.textContent = msg;
   document.body.appendChild(t); setTimeout(() => t.remove(), 4000);
 }
 

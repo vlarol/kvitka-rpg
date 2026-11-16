@@ -81,7 +81,20 @@ export const ROOMS = [
   { id: 'D4', imgs: ['D4'], name: 'Евакуаційні капсули', rects: [[52.5, 84.4, 7.3, 5.9]] },
   { id: 'OUT', name: 'Зовні (обшивка)', rects: [[64.0, 84.0, 8.0, 6.0]], anchor: [68, 87], outside: true }
 ];
+// Доступ: 'all' — відкрито всім; масив — хто має доступ за замовчуванням (Лео має капітанську ключ-карту).
+// hard: true — складний замок (злом з перешкодою). needFrom — увійти можна лише з цієї кімнати.
+const ACCESS = {
+  A1: 'all', A2: 'all', A4: 'all', A5: 'all', C1: 'all', D2: 'all',
+  B1: ['elis', 'leo'], B2: ['chia', 'leo'], B3: ['aizek', 'leo'], B4: ['leo'],
+  N1: ['elis', 'leo'], N2: ['elis', 'leo'], N3: ['elis', 'leo'], N4: ['elis', 'leo'],
+  A3: ['marta', 'leo'], D1: ['elis', 'aizek', 'leo'], D3: ['aizek', 'elis', 'leo'],
+  A6: ['elis', 'leo'], D4: ['leo'], OUT: ['aizek', 'elis', 'leo']
+};
+const HARD = ['A3', 'D4', 'B4'];
 for (const r of ROOMS) {
+  r.access = ACCESS[r.id] || 'all';
+  r.hard = HARD.includes(r.id);
+  if (r.id === 'OUT') r.needFrom = 'D3';
   r.imgs = (r.imgs || []).map(f => `assets/rooms/${f}.jpg`);
   if (!r.anchor) { const [l, t, w, h] = r.rects[0]; r.anchor = [l + w / 2, t + h / 2]; }
 }
