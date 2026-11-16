@@ -258,7 +258,7 @@ function renderCutscene() {
 function renderPlayer() {
   const id = myCharId();
   if (!S.state) {
-    $('#app').innerHTML = `<div class="center-msg">${ringHTML('evade')}<h1>STS-187</h1><p>Ведучий ще не запустив гру. Сторінка оновиться сама.</p></div>`;
+    $('#app').innerHTML = `<div class="center-msg cover"><div style="flex:1"></div>${ringHTML('evade')}<p>Ведучий ще не запустив гру. Сторінка оновиться сама.</p></div>`;
     return;
   }
   if (!id) return renderJoin();
@@ -291,7 +291,7 @@ function renderJoin() {
   }).join('');
   const name = $('#joinName') ? $('#joinName').value : (localStorage.getItem('kvitka-name') || '');
   $('#app').innerHTML = `<div class="screen join">
-    <header class="join-head"><h1>STS-187 — CREW MANIFEST</h1><div class="ai">AI ${ringHTML(S.state.mode)}</div></header>
+    <header class="join-head"><h1><small>STS-187 · ДЕНЬ 547</small>CREW MANIFEST <em>///</em></h1><div class="ai">AI ${ringHTML(S.state.mode)}</div></header>
     <div class="cards">${cards}</div>
     <footer class="join-foot"><input id="joinName" maxlength="24" placeholder="ВАШЕ ІМ'Я" value="${esc(name)}">
       <button class="primary" data-act="join" ${sel ? '' : 'disabled'}>НА БОРТ</button></footer>

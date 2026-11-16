@@ -6,7 +6,7 @@ export const SAVE_LABELS = { san: 'Глузд', fear: 'Страх', body: 'Ті�
 
 export const CHARACTERS = [
   {
-    id: 'leo', name: 'Лео', role: 'Капітан', cls: 'Командир', color: '#7fb3d5',
+    id: 'leo', portrait: 'leo.jpg', name: 'Лео', role: 'Капітан', cls: 'Командир', color: '#7fb3d5',
     stats: { str: 38, spd: 32, int: 40, cmb: 42 }, saves: { san: 30, fear: 38, body: 28 },
     health: 16,
     skills: [['Командування', 20], ['Пілотування', 15], ['Вогнепальна зброя', 15], ['Військовий вишкіл', 10]],
@@ -15,7 +15,7 @@ export const CHARACTERS = [
     start: 'A1'
   },
   {
-    id: 'elis', name: 'Еліс', role: 'Інженерка', cls: 'Робітниця', color: '#d5a87f',
+    id: 'elis', portrait: 'elis.jpg', name: 'Еліс', role: 'Інженерка', cls: 'Робітниця', color: '#d5a87f',
     stats: { str: 30, spd: 40, int: 42, cmb: 28 }, saves: { san: 34, fear: 30, body: 32 },
     health: 14,
     skills: [['Інженерія', 20], ['Ремонт механізмів', 15], ['Комп\'ютери', 10], ['Невагомість', 10], ['Хімія', 10]],
@@ -24,7 +24,7 @@ export const CHARACTERS = [
     start: 'B1'
   },
   {
-    id: 'chia', name: 'Чіа', role: 'Командир ППО', cls: 'Морпіх', color: '#c97f7f',
+    id: 'chia', portrait: 'chia.jpg', name: 'Чіа', role: 'Стрілець турелі ППО', cls: 'Морпіх', color: '#c97f7f',
     stats: { str: 40, spd: 38, int: 32, cmb: 52 }, saves: { san: 32, fear: 48, body: 38 },
     health: 17,
     skills: [['Турелі ППО', 20], ['Вогнепальна зброя', 15], ['Рукопашний бій', 15], ['Військовий вишкіл', 10], ['Атлетика', 10]],
@@ -33,7 +33,7 @@ export const CHARACTERS = [
     start: 'A2'
   },
   {
-    id: 'aizek', name: 'Айзек', role: 'Оператор РЛС / EVA', cls: 'Морпіх', color: '#8fc98f',
+    id: 'aizek', portrait: 'aizek.jpg', name: 'Айзек', role: 'Оператор РЛС / EVA', cls: 'Морпіх', color: '#8fc98f',
     stats: { str: 44, spd: 42, int: 30, cmb: 44 }, saves: { san: 26, fear: 44, body: 40 },
     health: 18,
     skills: [['Невагомість і EVA', 15], ['Рукопашний бій', 15], ['Сенсори і РЛС', 10], ['Атлетика', 10], ['Військовий вишкіл', 10]],
