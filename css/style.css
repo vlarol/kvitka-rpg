@@ -228,3 +228,18 @@ details textarea { margin-bottom: 6px; font-size: 12px; }
   .result { margin-left: 0; }
 }
 @media (max-width: 640px) { .cards { grid-template-columns: repeat(2, 1fr); } .join-foot { flex-direction: column; } .join-foot .primary { padding: 14px; } }
+
+/* локація */
+.viewtabs { display: flex; gap: 6px; margin-bottom: 8px; }
+.loc { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 6px; overflow: hidden; }
+.loc img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; animation: fadein .5s ease; }
+@keyframes fadein { from { opacity: 0; } }
+.loc::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 120px rgba(0,0,0,.75); }
+.noimg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); letter-spacing: .2em; }
+.loc-label { position: absolute; top: 14px; left: 16px; z-index: 2; background: rgba(10,12,14,.72); padding: 8px 12px; border-left: 2px solid var(--accent); }
+.loc-label small { display: block; font-size: 10px; letter-spacing: .2em; color: var(--accent); }
+.loc-label b { font-size: 16px; letter-spacing: .04em; }
+.loc-next { position: absolute; top: 14px; right: 16px; z-index: 2; background: rgba(10,12,14,.72); }
+.loc-here { position: absolute; left: 16px; bottom: 16px; z-index: 2; display: flex; gap: 6px; flex-wrap: wrap; max-width: 70%; }
+.chipc { background: rgba(10,12,14,.8); border: 1px solid var(--c); color: var(--c); padding: 4px 10px; border-radius: 3px; font-size: 12px; }
+.loc-map { position: absolute; right: 16px; bottom: 16px; z-index: 2; }

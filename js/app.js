@@ -19,7 +19,7 @@ const S = { seats: {}, chars: {}, state: null, log: {}, secret: null, secrets: {
 const UI = {
   pick: null, sheetOpen: true, secretOpen: false, target: null, skill: null,
   adv: false, dis: false, lastRoll: null, panicPrompt: false, cutTs: null, dismissedCut: null,
-  gretaTs: null, voice: false, openSec: new Set(), gmSel: null, resetArm: false, gmLast: null
+  gretaTs: null, voice: false, view: IS_GM_PAGE ? 'map' : 'loc', imgIdx: 0, mainKey: null, openSec: new Set(), gmSel: null, resetArm: false, gmLast: null
 };
 const subs = [];
 
@@ -171,6 +171,37 @@ function mapHTML(clickable) {
     <div class="map-hint">${clickable ? (IS_GM_PAGE ? 'Оберіть персонажа (фішку або картку), потім клікніть кімнату' : 'Клікніть кімнату, щоб перейти') : ''}</div>`;
 }
 
+function currentRoom() {
+  if (IS_GM_PAGE) return UI.gmSel && S.chars[UI.gmSel] ? S.chars[UI.gmSel].loc : 'A1';
+  const id = myCharId();
+  return id && S.chars[id] ? S.chars[id].loc : 'A1';
+}
+
+function locHTML(rid) {
+  const r = ROOM_BY_ID[rid] || ROOM_BY_ID.A1;
+  const here = CHARACTERS.filter(c => S.chars[c.id] && S.chars[c.id].loc === r.id && (S.seats[c.id] || IS_GM_PAGE));
+  const img = r.imgs.length ? r.imgs[UI.imgIdx % r.imgs.length] : null;
+  return `<div class="loc">
+    ${img ? `<img src="${img}" alt="${esc(r.name)}">` : `<div class="noimg">${r.outside ? 'ЗОВНІ. ВАКУУМ.' : 'НЕМАЄ ЗОБРАЖЕННЯ З КАМЕРИ'}</div>`}
+    <div class="loc-label"><small>ЛОКАЦІЯ</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
+    ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
+    <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}</div>
+    <button class="loc-map primary" data-act="view" data-v="map">МАПА КОРАБЛЯ</button>
+  </div>`;
+}
+
+function renderMain(force) {
+  const el = $('#map'); if (!el) return;
+  const rid = currentRoom();
+  const key = UI.view === 'map'
+    ? 'map|' + JSON.stringify(S.chars) + JSON.stringify(Object.keys(S.seats || {})) + UI.gmSel
+    : `loc|${rid}|${UI.imgIdx}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
+  if (!force && key === UI.mainKey) return;
+  UI.mainKey = key;
+  const tabs = `<div class="viewtabs"><button class="tog ${UI.view === 'loc' ? 'on' : ''}" data-act="view" data-v="loc">ЛОКАЦІЯ</button><button class="tog ${UI.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">МАПА</button></div>`;
+  el.innerHTML = tabs + (UI.view === 'map' ? mapHTML(true) : locHTML(rid));
+}
+
 function logHTML(entries) {
   const list = Object.entries(entries || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1));
   if (!list.length) return '<div class="empty">Поки тихо.</div>';
@@ -245,7 +276,7 @@ function renderPlayer() {
   $('#ring').innerHTML = ringHTML(S.state.mode);
   $('#who').innerHTML = `<span style="color:${c.color}">${esc(c.name)}</span> · ${esc(S.seats[id].name)}`;
   $('#voiceBtn').textContent = UI.voice ? 'ГОЛОС ҐРЕТИ: ON' : 'ГОЛОС ҐРЕТИ: OFF';
-  $('#map').innerHTML = mapHTML(true);
+  renderMain();
   $('#log').innerHTML = logHTML(S.log);
   renderSheet(); renderTray(); gretaBanner(); renderCutscene();
 }
@@ -326,7 +357,7 @@ async function bootPlayer() {
     if (!$('#playerRoot') || !id) $('#app').innerHTML = '';
     renderPlayer();
   }));
-  subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#playerRoot')) { $('#map').innerHTML = mapHTML(true); renderSheet(); } }));
+  subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#playerRoot')) { renderMain(); renderSheet(); } }));
   subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#log')) $('#log').innerHTML = logHTML(S.log); }, 80));
 }
 
@@ -345,7 +376,7 @@ function renderGM() {
   const mode = S.state ? S.state.mode : 'assist';
   $('#ring').innerHTML = ringHTML(mode);
   $('#modes').innerHTML = Object.entries(GRETA_MODES).map(([k, l]) => `<button class="tog ${mode === k ? 'on' : ''}" data-act="mode" data-m="${k}">${l}</button>`).join('');
-  $('#map').innerHTML = mapHTML(true);
+  renderMain();
   renderCrew(); renderGMControls(); gretaBanner();
 }
 
@@ -421,7 +452,7 @@ async function bootGM() {
   S.isAdmin = true;
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
-  subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { $('#map').innerHTML = mapHTML(true); renderCrew(); } }));
+  subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
   subs.push(store.on('game/secrets', v => { S.secrets = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('textarea[id^=sec-]')) renderCrew(); }));
   subs.push(store.on('game/gm', v => { S.gm = v || {}; if ($('#gmRoot')) renderGMControls(); }));
   subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('#ctl input, #ctl textarea')) renderGMControls(); }, 120));
@@ -470,8 +501,12 @@ const actions = {
     const rid = el.dataset.room;
     const id = IS_GM_PAGE ? UI.gmSel : myCharId();
     if (!id) return;
+    if (!IS_GM_PAGE) { UI.view = 'loc'; UI.imgIdx = 0; }
     await store.update(`game/chars/${id}`, { loc: rid });
+    renderMain(true);
   },
+  view(el) { UI.view = el.dataset.v; renderMain(true); },
+  nextImg() { UI.imgIdx++; renderMain(true); },
   voice() { UI.voice = !UI.voice; if (UI.voice) speak('Голос Ґрети увімкнено.'); renderPlayer(); },
   skipCut() { UI.dismissedCut = UI.cutTs; $('#cut').innerHTML = ''; },
   closeGreta() { $('#greta').innerHTML = ''; },
@@ -481,7 +516,7 @@ const actions = {
     catch (e) { $('#joinErr').textContent = e.message; }
   },
   async gmLogout() { await store.signOut(); location.reload(); },
-  gmSel(el) { UI.gmSel = UI.gmSel === el.dataset.id ? null : el.dataset.id; $('#map').innerHTML = mapHTML(true); renderCrew(); },
+  gmSel(el) { UI.gmSel = UI.gmSel === el.dataset.id ? null : el.dataset.id; UI.imgIdx = 0; renderMain(true); renderCrew(); },
   async o2(el) { await store.update('game/state', { o2: clamp((S.state.o2 ?? O2_START) + +el.dataset.d, 0, 999) }); },
   async o2set() { await store.update('game/state', { o2: O2_START }); },
   async mode(el) { await store.update('game/state', { mode: el.dataset.m }); },
