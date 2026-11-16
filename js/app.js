@@ -19,7 +19,7 @@ const S = { seats: {}, chars: {}, state: null, log: {}, secret: null, secrets: {
 const UI = {
   pick: null, sheetOpen: true, secretOpen: false, target: null, skill: null,
   adv: false, dis: false, lastRoll: null, panicPrompt: false, cutTs: null, dismissedCut: null,
-  gretaTs: null, voice: false, view: IS_GM_PAGE ? 'map' : 'loc', imgIdx: 0, mainKey: null, openSec: new Set(), gmSel: null, resetArm: false, gmLast: null
+  gretaTs: null, voice: false, lastTurn: undefined, view: IS_GM_PAGE ? 'map' : 'loc', imgIdx: 0, mainKey: null, openSec: new Set(), gmSel: null, resetArm: false, gmLast: null
 };
 const subs = [];
 
@@ -173,11 +173,18 @@ function mapHTML(clickable) {
   const outside = ROOM_BY_ID.OUT.rects[0];
   return `<div class="map"><img src="assets/ship.png" alt="Схема корабля STS-187">${rooms}
     <div class="outside-label" style="left:${outside[0]}%;top:${outside[1] + outside[3] + 0.5}%">ЗОВНІ</div>${tokens}</div>
-    <div class="map-hint">${clickable ? (IS_GM_PAGE ? 'Оберіть персонажа (фішку або картку), потім клікніть кімнату' : 'Клікніть кімнату, щоб перейти. Інших видно, лише коли ви в одній кімнаті') : ''}</div>`;
+    <div class="map-hint">${clickable ? (IS_GM_PAGE ? 'Оберіть персонажа (фішку або картку), потім клікніть кімнату' : (turnId() && turnId() !== myCharId() ? 'Зараз хід ' + CHAR_BY_ID[turnId()].name + ' — переходити можна у свій хід' : 'Клікніть кімнату, щоб перейти. Інших видно, лише коли ви в одній кімнаті')) : ''}</div>`;
 }
 
+function turnId() { return (S.state && S.state.turn && S.seats[S.state.turn]) ? S.state.turn : null; }
+
 function currentRoom() {
-  if (IS_GM_PAGE) return UI.gmSel && S.chars[UI.gmSel] ? S.chars[UI.gmSel].loc : 'A1';
+  if (IS_GM_PAGE) {
+    const f = UI.gmSel || turnId();
+    return f && S.chars[f] ? S.chars[f].loc : 'A1';
+  }
+  const t = turnId();
+  if (t && S.chars[t]) return S.chars[t].loc;
   const id = myCharId();
   return id && S.chars[id] ? S.chars[id].loc : 'A1';
 }
@@ -188,7 +195,7 @@ function locHTML(rid) {
   const img = r.imgs.length ? r.imgs[UI.imgIdx % r.imgs.length] : null;
   return `<div class="loc">
     ${img ? `<img src="${img}" alt="${esc(r.name)}">` : `<div class="noimg">${r.outside ? 'ЗОВНІ. ВАКУУМ.' : 'НЕМАЄ ЗОБРАЖЕННЯ З КАМЕРИ'}</div>`}
-    <div class="loc-label"><small>ЛОКАЦІЯ</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
+    <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
     ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
     <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}</div>
     <button class="loc-map primary" data-act="view" data-v="map">МАПА КОРАБЛЯ</button>
@@ -200,7 +207,7 @@ function renderMain(force) {
   const rid = currentRoom();
   const key = UI.view === 'map'
     ? 'map|' + JSON.stringify(S.chars) + JSON.stringify(Object.keys(S.seats || {})) + UI.gmSel
-    : `loc|${rid}|${UI.imgIdx}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
+    : `loc|${rid}|${UI.imgIdx}|${turnId()}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
   if (!force && key === UI.mainKey) return;
   UI.mainKey = key;
   const tabs = `<div class="viewtabs"><button class="tog ${UI.view === 'loc' ? 'on' : ''}" data-act="view" data-v="loc">ЛОКАЦІЯ</button><button class="tog ${UI.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">МАПА</button></div>`;
@@ -269,7 +276,7 @@ function renderPlayer() {
   if (!id) return renderJoin();
   if (!$('#playerRoot')) {
     $('#app').innerHTML = `<div id="playerRoot" class="screen player">
-      <header class="topbar"><div class="brand">STS-187</div><div id="o2"></div><div class="spacer"></div>
+      <header class="topbar"><div class="brand">STS-187</div><div id="o2"></div><div class="spacer"></div><div id="turn"></div>
         <button class="ghost small" data-act="voice" id="voiceBtn"></button><div id="who" class="who"></div><div id="ring"></div></header>
       <div id="greta"></div>
       <main class="layout"><section class="mapcol" id="map"></section>
@@ -281,9 +288,27 @@ function renderPlayer() {
   $('#ring').innerHTML = ringHTML(S.state.mode);
   $('#who').innerHTML = `<span style="color:${c.color}">${esc(c.name)}</span> · ${esc(S.seats[id].name)}`;
   $('#voiceBtn').textContent = UI.voice ? 'ГОЛОС ҐРЕТИ: ON' : 'ГОЛОС ҐРЕТИ: OFF';
+  renderTurn();
   renderMain();
   $('#log').innerHTML = logHTML(S.log);
   renderSheet(); renderTray(); gretaBanner(); renderCutscene();
+}
+
+function turnBadge() {
+  const t = turnId();
+  if (!t) return '<div class="turn free">ВІЛЬНИЙ РЕЖИМ</div>';
+  const c = CHAR_BY_ID[t];
+  const mine = !IS_GM_PAGE && t === myCharId();
+  return `<div class="turn ${mine ? 'mine' : ''}" style="--c:${c.color}"><small>ХІД</small><b>${mine ? 'ВАШ ХІД' : esc(c.name)}</b></div>`;
+}
+function renderTurn() {
+  const el = $('#turn'); if (!el) return;
+  const t = turnId();
+  if (t !== UI.lastTurn) {           // хід змінився — всі дивляться на локацію активного персонажа
+    UI.lastTurn = t; UI.imgIdx = 0;
+    if (t && !IS_GM_PAGE) UI.view = 'loc';
+  }
+  el.innerHTML = turnBadge();
 }
 
 function renderJoin() {
@@ -372,7 +397,9 @@ function renderGM() {
     $('#app').innerHTML = `<div id="gmRoot" class="screen gm">
       <header class="topbar"><div class="brand">WARDEN // GRETA CORE</div><div id="o2"></div>
         <div class="o2ctl"><button class="ghost small" data-act="o2" data-d="-30">−30</button><button class="ghost small" data-act="o2" data-d="30">+30</button><button class="ghost small" data-act="o2set">6:00</button></div>
-        <div class="spacer"></div><div id="modes" class="modes"></div><div id="ring"></div></header>
+        <div class="spacer"></div><div id="turn"></div>
+        <div class="o2ctl"><button class="primary small" data-act="nextTurn">НАСТУПНИЙ ХІД ▸</button><button class="ghost small" data-act="freeTurn">ВІЛЬНО</button></div>
+        <div id="modes" class="modes"></div><div id="ring"></div></header>
       <div id="greta"></div>
       <main class="layout gm-layout"><aside class="crewcol" id="crew"></aside><section class="mapcol" id="map"></section>
         <aside class="ctlcol" id="ctl"></aside></main></div>`;
@@ -380,6 +407,7 @@ function renderGM() {
   $('#o2').innerHTML = o2HTML();
   const mode = S.state ? S.state.mode : 'assist';
   $('#ring').innerHTML = ringHTML(mode);
+  renderTurn();
   $('#modes').innerHTML = Object.entries(GRETA_MODES).map(([k, l]) => `<button class="tog ${mode === k ? 'on' : ''}" data-act="mode" data-m="${k}">${l}</button>`).join('');
   renderMain();
   renderCrew(); renderGMControls(); gretaBanner();
@@ -392,7 +420,7 @@ function renderCrew() {
     const sec = (S.secrets[c.id] && S.secrets[c.id].text) || '';
     const room = ROOM_BY_ID[st.loc];
     return `<div class="crew ${UI.gmSel === c.id ? 'sel' : ''}" style="--c:${c.color}">
-      <div class="crew-top" data-act="gmSel" data-id="${c.id}"><b>${esc(c.name)}</b><span>${seat ? esc(seat.name) : '<i class="muted">вільно</i>'}</span></div>
+      <div class="crew-top" data-act="gmSel" data-id="${c.id}"><b>${esc(c.name)}${turnId() === c.id ? ' <span class="turn-dot">ХІД</span>' : ''}</b><span>${seat ? esc(seat.name) : '<i class="muted">вільно</i>'}</span></div>
       <div class="crew-loc muted">${room ? esc(room.id + ' · ' + room.name) : '—'}</div>
       <div class="crew-row"><span>HP</span><button class="ghost xs" data-act="gHp" data-id="${c.id}" data-d="-1">−</button><b>${st.health ?? '?'}/${c.health}</b><button class="ghost xs" data-act="gHp" data-id="${c.id}" data-d="1">+</button>
         <span>W</span><b>${st.wounds ?? 0}/2</b><button class="ghost xs" data-act="gWound" data-id="${c.id}" data-d="1">+</button><button class="ghost xs" data-act="gWound" data-id="${c.id}" data-d="-1">−</button></div>
@@ -400,7 +428,7 @@ function renderCrew() {
         <span>MIN</span><b>${st.minStress ?? 2}</b><button class="ghost xs" data-act="gMin" data-id="${c.id}" data-d="1">+</button></div>
       <details data-sec="${c.id}" ${UI.openSec.has(c.id) ? 'open' : ''}><summary>ТАЄМНА ЦІЛЬ ${sec ? '✓' : ''}</summary><textarea id="sec-${c.id}" rows="5" placeholder="Текст побачить тільки гравець цього персонажа">${esc(sec)}</textarea>
         <button class="ghost small" data-act="saveSecret" data-id="${c.id}">ЗБЕРЕГТИ</button></details>
-      ${seat ? `<button class="ghost xs" data-act="kick" data-id="${c.id}">звільнити місце</button>` : ''}
+      ${seat ? `<button class="ghost xs" data-act="setTurn" data-id="${c.id}">дати хід</button> <button class="ghost xs" data-act="kick" data-id="${c.id}">звільнити місце</button>` : ''}
     </div>`;
   }).join('');
 }
@@ -428,6 +456,12 @@ function renderGMControls() {
     <h4>ГРА</h4>
     <button class="${UI.resetArm ? 'danger' : 'ghost'} small" data-act="reset">${UI.resetArm ? 'ТОЧНО? НАТИСНІТЬ ЩЕ РАЗ' : (S.state ? 'НОВА ГРА (скинути все)' : 'ЗАПУСТИТИ ГРУ')}</button>
     <h4>ЖУРНАЛ</h4><div class="log">${logHTML(S.log)}</div>`;
+}
+
+async function setTurnTo(id) {
+  await store.update('game/state', { turn: id });
+  const c = CHAR_BY_ID[id];
+  await store.push('game/log', { uid: store.uid, who: 'Хід', charId: id, text: `${c.name} (${S.seats[id] ? S.seats[id].name : '—'})`, kind: 'turn' });
 }
 
 async function gmReset() {
@@ -506,6 +540,7 @@ const actions = {
     const rid = el.dataset.room;
     const id = IS_GM_PAGE ? UI.gmSel : myCharId();
     if (!id) return;
+    if (!IS_GM_PAGE && turnId() && turnId() !== id) { toast('Зараз не ваш хід — переходити можна лише у свій хід.'); return; }
     if (!IS_GM_PAGE) { UI.view = 'loc'; UI.imgIdx = 0; }
     await store.update(`game/chars/${id}`, { loc: rid });
     renderMain(true);
@@ -530,6 +565,14 @@ const actions = {
     await store.update(`game/chars/${c.id}`, { health: clamp((st.health ?? c.health) + +el.dataset.d, 0, c.health) });
   },
   async gWound(el) { const st = S.chars[el.dataset.id]; await store.update(`game/chars/${el.dataset.id}`, { wounds: clamp((st.wounds || 0) + +el.dataset.d, 0, 2) }); },
+  async setTurn(el) { await setTurnTo(el.dataset.id); },
+  async nextTurn() {
+    const seated = CHARACTERS.map(c => c.id).filter(id => S.seats[id]);
+    if (!seated.length) return toast('Ще ніхто не сів за стіл.');
+    const i = seated.indexOf(turnId());
+    await setTurnTo(seated[(i + 1) % seated.length]);
+  },
+  async freeTurn() { await store.update('game/state', { turn: null }); await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Вільний режим: кожен діє сам.', kind: 'system' }); },
   async gStress(el) { const st = S.chars[el.dataset.id]; await store.update(`game/chars/${el.dataset.id}`, { stress: clamp((st.stress ?? 2) + +el.dataset.d, st.minStress || 2, 20) }); },
   async gMin(el) { const st = S.chars[el.dataset.id]; const m = clamp((st.minStress || 2) + 1, 2, 20); await store.update(`game/chars/${el.dataset.id}`, { minStress: m, stress: Math.max(m, st.stress || 2) }); },
   async saveSecret(el) { const id = el.dataset.id; await store.set(`game/secrets/${id}`, { text: $('#sec-' + id).value.trim() }); },
@@ -573,6 +616,18 @@ document.addEventListener('toggle', e => {
 }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'joinName' && UI.pick) actions.join(); });
 
+const introStart = Date.now();
+function introReady() {
+  const m = $('#introMsg'); if (!m) return;
+  setTimeout(() => { m.innerHTML = '<button class="primary big" data-act="enter">ПІДНЯТИСЯ НА БОРТ</button>'; }, Math.max(0, 1800 - (Date.now() - introStart)));
+}
+function closeIntro(now) {
+  const el = $('#intro'); if (!el) return;
+  if (now) { el.remove(); return; }
+  el.classList.add('out'); setTimeout(() => el.remove(), 900);
+}
+actions.enter = () => { closeIntro(); if ('speechSynthesis' in window) speechSynthesis.getVoices(); };
+
 function toast(msg) {
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
   document.body.appendChild(t); setTimeout(() => t.remove(), 4000);
@@ -584,9 +639,9 @@ function toast(msg) {
     store = await createStore();
     if (store.mode === 'demo') document.body.insertAdjacentHTML('beforeend',
       `<div class="demo-flag">ДЕМО-РЕЖИМ · без Firebase · ${IS_GM_PAGE ? '<a href="./">екран гравця</a>' : '<a href="?gm">пульт ведучого</a>'}</div>`);
-    if (IS_GM_PAGE) await bootGM(); else await bootPlayer();
+    if (IS_GM_PAGE) { await bootGM(); closeIntro(true); } else { await bootPlayer(); introReady(); }
   } catch (err) {
     console.error(err);
-    $('#app').innerHTML = `<div class="center-msg"><h1>ЗБІЙ ЗВ'ЯЗКУ</h1><p>${esc(err.message)}</p></div>`;
+    closeIntro(true); $('#app').innerHTML = `<div class="center-msg"><h1>ЗБІЙ ЗВ'ЯЗКУ</h1><p>${esc(err.message)}</p></div>`;
   }
 })();
