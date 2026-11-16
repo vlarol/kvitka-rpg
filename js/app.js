@@ -1,9 +1,10 @@
-import { createStore } from './store.js';
+import { createStore } from './store.js?v=202611162229';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars
-} from './data.js';
+} from './data.js?v=202611162229';
 
+const VERSION = '202611162229';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -735,6 +736,7 @@ function toast(msg, good) {
 (async () => {
   try {
     store = await createStore({ perTab: !IS_GM_PAGE });
+    document.body.insertAdjacentHTML('beforeend', `<div class="ver">v${VERSION}</div>`);
     if (store.mode === 'demo') document.body.insertAdjacentHTML('beforeend',
       `<div class="demo-flag">ДЕМО-РЕЖИМ · без Firebase · ${IS_GM_PAGE ? '<a href="./">екран гравця</a>' : '<a href="?gm">пульт ведучого</a>'}</div>`);
     if (IS_GM_PAGE) { await bootGM(); closeIntro(true); } else { await bootPlayer(); introReady(); }
