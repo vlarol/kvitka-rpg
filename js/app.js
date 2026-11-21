@@ -1,10 +1,10 @@
-import { createStore } from './store.js?v=202611162229';
+import { createStore } from './store.js?v=202611212102';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars
-} from './data.js?v=202611162229';
+} from './data.js?v=202611212102';
 
-const VERSION = '202611162229';
+const VERSION = '202611212102';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -211,6 +211,18 @@ function lockModal(rid) {
     <p class="muted small-note">Ключ-карту можна отримати в грі — вкрасти, виміняти, отримати від капітана. Ведучий додасть її вам.</p>`}
     <button class="ghost small" data-act="closeModal">СКАСУВАТИ</button></div>`;
 }
+function updateSecretBtn() {
+  const b = $('#secretBtn'); if (!b) return;
+  b.classList.toggle('has', !!S.secret);
+  b.classList.toggle('new', !!(S.secret && UI.secretNew));
+}
+function secretModal() {
+  UI.secretNew = false; updateSecretBtn();
+  $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModal"></div><div class="modal secret-modal">
+    <small>ТІЛЬКИ ДЛЯ ВАС</small><h2>ТАЄМНА ЦІЛЬ</h2>
+    <div class="secret">${S.secret ? esc(S.secret) : '<span class="muted">Ведучий ще не надіслав вам таємну ціль.</span>'}</div>
+    <button class="ghost small" data-act="closeModal">ЗАКРИТИ</button></div>`;
+}
 function bestSkill(c, names) {
   return c.skills.filter(([n]) => names.includes(n)).sort((a, b) => b[1] - a[1])[0] || null;
 }
@@ -316,6 +328,7 @@ function renderPlayer() {
   if (!$('#playerRoot')) {
     $('#app').innerHTML = `<div id="playerRoot" class="screen player">
       <header class="topbar"><div class="brand">STS-187</div><div id="o2"></div><div class="spacer"></div><div id="turn"></div>
+        <button class="ghost small secret-btn" data-act="secretModal" id="secretBtn">ТАЄМНА ЦІЛЬ</button>
         <button class="ghost small" data-act="voice" id="voiceBtn"></button><div id="who" class="who"></div><div id="ring"></div></header>
       <div id="greta"></div>
       <main class="layout"><section class="mapcol" id="map"></section>
@@ -326,7 +339,8 @@ function renderPlayer() {
   $('#o2').innerHTML = o2HTML();
   $('#ring').innerHTML = ringHTML(S.state.mode);
   $('#who').innerHTML = `<span style="color:${c.color}">${esc(c.name)}</span> · ${esc(S.seats[id].name)}`;
-  $('#voiceBtn').textContent = UI.voice ? 'ГОЛОС ҐРЕТИ: ON' : 'ГОЛОС ҐРЕТИ: OFF';
+  $('#voiceBtn').textContent = UI.voice ? 'ГОЛОС: ON' : 'ГОЛОС: OFF';
+  updateSecretBtn();
   renderTurn();
   renderMain();
   $('#log').innerHTML = logHTML(S.log);
@@ -422,7 +436,12 @@ async function bootPlayer() {
     if (id && S._secretFor !== id) {
       S._secretFor = id;
       if (S._secretOff) S._secretOff();
-      S._secretOff = store.on(`game/secrets/${id}`, s => { S.secret = s && s.text; renderSheet(); });
+      S._secretOff = store.on(`game/secrets/${id}`, s => {
+        const txt = s && s.text;
+        if (txt && txt !== S.secret) { UI.secretNew = true; if (S._secretLoaded) toast('Ведучий надіслав вам таємну ціль. Кнопка «ТАЄМНА ЦІЛЬ» угорі.', true); }
+        S._secretLoaded = true;
+        S.secret = txt; renderSheet(); updateSecretBtn();
+      });
       if (S._reqOff) S._reqOff();
       S._reqOff = store.on(`game/requests/${id}`, rq => {
         if (!rq || rq.status === 'pending') return;
@@ -469,7 +488,7 @@ function renderCrew() {
     const room = ROOM_BY_ID[st.loc];
     return `<div class="crew ${UI.gmSel === c.id ? 'sel' : ''}" style="--c:${c.color}">
       <div class="crew-top" data-act="gmSel" data-id="${c.id}"><b>${esc(c.name)}${turnId() === c.id ? ' <span class="turn-dot">ХІД</span>' : ''}</b><span>${seat ? esc(seat.name) : '<i class="muted">вільно</i>'}</span></div>
-      <div class="crew-loc muted">${room ? esc(room.id + ' · ' + room.name) : '—'}</div>
+      <div class="crew-loc"><select data-move="${c.id}" title="Перемістити персонажа">${ROOMS.map(r => `<option value="${r.id}" ${st.loc === r.id ? 'selected' : ''}>${r.id} · ${esc(r.name)}</option>`).join('')}</select></div>
       <div class="crew-row"><span>HP</span><button class="ghost xs" data-act="gHp" data-id="${c.id}" data-d="-1">−</button><b>${st.health ?? '?'}/${c.health}</b><button class="ghost xs" data-act="gHp" data-id="${c.id}" data-d="1">+</button>
         <span>W</span><b>${st.wounds ?? 0}/2</b><button class="ghost xs" data-act="gWound" data-id="${c.id}" data-d="1">+</button><button class="ghost xs" data-act="gWound" data-id="${c.id}" data-d="-1">−</button></div>
       <div class="crew-row"><span>STRESS</span><button class="ghost xs" data-act="gStress" data-id="${c.id}" data-d="-1">−</button><b class="${(st.stress || 0) >= 10 ? 'hot' : ''}">${st.stress ?? '?'}</b><button class="ghost xs" data-act="gStress" data-id="${c.id}" data-d="1">+</button>
@@ -572,7 +591,7 @@ const actions = {
     UI.target = null; UI.skill = null; UI.lastRoll = null;
   },
   toggleSheet() { UI.sheetOpen = !UI.sheetOpen; renderSheet(); },
-  secret() { UI.secretOpen = !UI.secretOpen; renderSheet(); },
+  secret() { UI.secretOpen = !UI.secretOpen; UI.secretNew = false; updateSecretBtn(); renderSheet(); },
   target(el) {
     const t = [el.dataset.k, el.dataset.key];
     UI.target = UI.target && UI.target[0] === t[0] && UI.target[1] === t[1] ? null : t;
@@ -605,6 +624,7 @@ const actions = {
     await store.update(`game/chars/${id}`, { loc: rid });
     renderMain(true);
   },
+  secretModal() { secretModal(); },
   closeModal() { $('#modal').innerHTML = ''; },
   async hack(el) {
     const rid = el.dataset.room; const force = el.dataset.mode === 'force';
@@ -708,6 +728,12 @@ document.addEventListener('click', async e => {
   const fn = actions[el.dataset.act];
   if (!fn) return;
   try { await fn(el); } catch (err) { console.error(err); toast('Помилка: ' + err.message); }
+});
+document.addEventListener('change', async e => {
+  const sel = e.target.closest && e.target.closest('select[data-move]');
+  if (!sel) return;
+  try { await store.update(`game/chars/${sel.dataset.move}`, { loc: sel.value }); }
+  catch (err) { toast('Помилка: ' + err.message); }
 });
 document.addEventListener('toggle', e => {
   const d = e.target; if (!d.matches || !d.matches('details[data-sec]')) return;

@@ -347,3 +347,36 @@ h4::after { content: '///'; color: var(--orange); letter-spacing: 0; font-weight
 .keyrow > span { color: var(--muted); font-family: var(--head); letter-spacing: .12em; font-size: 10px; }
 .keyrow select { background: #0b0d10; color: var(--text); border: 1px solid var(--line); font: inherit; font-size: 11px; padding: 1px 4px; max-width: 150px; }
 .ver { position: fixed; right: 6px; bottom: 4px; z-index: 80; font: 10px var(--mono); color: #4a525b; pointer-events: none; }
+
+/* таємна ціль: кнопка й вікно */
+.secret-btn { display: none; }
+.secret-btn.has { display: inline-block; border-color: var(--danger); color: #ff8a7d; }
+.secret-btn.new { background: var(--danger); color: #fff; animation: pulseTurn 1.4s ease-in-out infinite; }
+.secret-modal { border-color: var(--danger); }
+.secret-modal .secret { font-size: 15px; line-height: 1.55; }
+.crew-loc select { width: 100%; background: #0b0d10; color: var(--text); border: 1px solid var(--line); font: inherit; font-size: 12px; padding: 3px 6px; margin: 2px 0 4px; }
+
+/* телефон */
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; gap: 8px 10px; padding: 8px 10px; }
+  .topbar .brand { font-size: 13px; }
+  .topbar .spacer { display: none; }
+  .o2 .val { font-size: 16px; }
+  .o2 .bar i { width: 6px; height: 14px; }
+  .who { font-size: 11px; }
+  .topbar .ring { width: 26px; height: 26px; margin-left: auto; }
+  .tray { position: static; gap: 8px; padding: 10px; }
+  .check { min-width: 0; width: 100%; }
+  .big { padding: 10px 16px; font-size: 14px; }
+  .result { min-width: 0; width: 100%; }
+  .result b { font-size: 30px; }
+  .sheet, .sheet.closed { padding: 10px 12px 18px; }
+  .mapcol { padding: 8px; }
+  .loc-label b { font-size: 13px; }
+  .loc-map { padding: 6px 10px; font-size: 12px; }
+  .player .layout { display: contents; }
+  .player .topbar { order: 0; } .player .mapcol { order: 1; } .player .tray { order: 2; border-bottom: 1px solid var(--orange-dim); }
+  .player .sheet { order: 3; } .player .logcol { order: 4; border-top: 1px solid var(--line); }
+  #greta { top: 8px; }
+  .gm-layout { display: flex; flex-direction: column; }
+}
