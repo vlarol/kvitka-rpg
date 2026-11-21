@@ -1,10 +1,10 @@
-import { createStore } from './store.js?v=202611212102';
+import { createStore } from './store.js?v=202611212108';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars
-} from './data.js?v=202611212102';
+} from './data.js?v=202611212108';
 
-const VERSION = '202611212102';
+const VERSION = '202611212108';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -175,7 +175,7 @@ function mapHTML(clickable) {
   const outside = ROOM_BY_ID.OUT.rects[0];
   return `<div class="map"><img src="assets/ship.png" alt="Схема корабля STS-187">${rooms}
     <div class="outside-label" style="left:${outside[0]}%;top:${outside[1] + outside[3] + 0.5}%">ЗОВНІ</div>${tokens}</div>
-    <div class="map-hint">${clickable ? (IS_GM_PAGE ? 'Оберіть персонажа (фішку або картку), потім клікніть кімнату' : (turnId() && turnId() !== myCharId() ? 'Зараз хід ' + CHAR_BY_ID[turnId()].name + ' — переходити можна у свій хід' : 'Клікніть кімнату, щоб перейти. Інших видно, лише коли ви в одній кімнаті')) : ''}</div>`;
+    <div class="map-hint">${clickable ? (IS_GM_PAGE ? (UI.gmSel ? 'Обрано ' + CHAR_BY_ID[UI.gmSel].name + ': клік по кімнаті переміщує персонажа. Клікніть персонажа ще раз, щоб зняти вибір' : 'Клік по кімнаті — подивитися локацію. Щоб перемістити персонажа, спершу оберіть його (фішку або картку)') : (turnId() && turnId() !== myCharId() ? 'Зараз хід ' + CHAR_BY_ID[turnId()].name + ' — переходити можна у свій хід' : 'Клікніть кімнату, щоб перейти. Інших видно, лише коли ви в одній кімнаті')) : ''}</div>`;
 }
 
 // ---------- доступ ----------
@@ -231,7 +231,9 @@ function turnId() { return (S.state && S.state.turn && S.seats[S.state.turn]) ? 
 
 function currentRoom() {
   if (IS_GM_PAGE) {
-    const f = UI.gmSel || turnId();
+    if (UI.gmSel && S.chars[UI.gmSel]) return S.chars[UI.gmSel].loc;
+    if (UI.gmView) return UI.gmView;
+    const f = turnId();
     return f && S.chars[f] ? S.chars[f].loc : 'A1';
   }
   const t = turnId();
@@ -249,6 +251,7 @@ function locHTML(rid) {
     <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
     ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
     <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}</div>
+    ${IS_GM_PAGE ? `<select class="loc-pick" data-gmview="1" title="Дивитися іншу локацію">${ROOMS.map(x => `<option value="${x.id}" ${x.id === r.id ? 'selected' : ''}>${x.id} · ${esc(x.name)}</option>`).join('')}</select>` : ''}
     <button class="loc-map primary" data-act="view" data-v="map">МАПА КОРАБЛЯ</button>
   </div>`;
 }
@@ -616,6 +619,7 @@ const actions = {
   async room(el) {
     const rid = el.dataset.room;
     const id = IS_GM_PAGE ? UI.gmSel : myCharId();
+    if (IS_GM_PAGE && !id) { UI.gmView = rid; UI.imgIdx = 0; UI.view = 'loc'; renderMain(true); return; }
     if (!id) return;
     if (!IS_GM_PAGE && turnId() && turnId() !== id) { toast('Зараз не ваш хід — переходити можна лише у свій хід.'); return; }
     if (!IS_GM_PAGE && S.chars[id].loc === rid) { UI.view = 'loc'; renderMain(true); return; }
@@ -730,6 +734,9 @@ document.addEventListener('click', async e => {
   try { await fn(el); } catch (err) { console.error(err); toast('Помилка: ' + err.message); }
 });
 document.addEventListener('change', async e => {
+  if (e.target.matches && e.target.matches('select[data-gmview]')) {
+    UI.gmSel = null; UI.gmView = e.target.value; UI.imgIdx = 0; renderMain(true); renderCrew(); return;
+  }
   const sel = e.target.closest && e.target.closest('select[data-move]');
   if (!sel) return;
   try { await store.update(`game/chars/${sel.dataset.move}`, { loc: sel.value }); }

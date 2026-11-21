@@ -380,3 +380,5 @@ h4::after { content: '///'; color: var(--orange); letter-spacing: 0; font-weight
   #greta { top: 8px; }
   .gm-layout { display: flex; flex-direction: column; }
 }
+.loc-pick { position: absolute; right: 16px; top: 14px; z-index: 3; background: rgba(10,12,14,.85); color: var(--text); border: 1px solid var(--orange-dim); font: 12px var(--font); padding: 6px 8px; max-width: 46%; }
+.loc-next { top: 54px; }
