@@ -645,3 +645,22 @@ html.mobile .player .mapcol:has(.map) .viewtabs { position: sticky; left: 0; wid
 /* мобільні: без важких фільтрів на великих фігурах (Safari/старі Android можуть їх не малювати) */
 html.mobile .figure, html.mobile .figure.fig-near, html.mobile .figure.active { filter: brightness(var(--br, .85)); }
 html.mobile .figures { transform: translateZ(0); }
+
+/* вступ: слайди */
+#slides { position: fixed; inset: 0; z-index: 110; background: #000; }
+.slides-stage { position: absolute; inset: 0; overflow: hidden; }
+.slide { position: absolute; inset: 0; opacity: 0; transition: opacity 1.2s ease; }
+.slide.on { opacity: 1; }
+.slide-bg { position: absolute; inset: -40px; background: center/cover no-repeat; filter: blur(28px) brightness(.45); }
+.slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transform: scale(1); transition: transform 14s linear; }
+.slide.on img { transform: scale(1.06); }
+.slides-ui { position: absolute; top: 14px; right: 14px; display: flex; gap: 10px; align-items: center; z-index: 2; }
+.slides-n { font: 500 11px var(--mono); letter-spacing: .2em; color: rgba(255,255,255,.55); }
+.slides-ui .ghost { color: rgba(255,255,255,.6); border-color: rgba(255,255,255,.2); background: rgba(0,0,0,.3); }
+#slides::after { content: ''; position: absolute; inset: 0; pointer-events: none; box-shadow: inset 0 0 160px rgba(0,0,0,.85); }
+@media (min-aspect-ratio: 16/10) { .slide img { object-fit: cover; } }
+.slides-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 6px 0; }
+.slides-thumbs button { aspect-ratio: 16/9; background: center/cover no-repeat; border: 1px solid #333; position: relative; padding: 0; cursor: pointer; opacity: .55; }
+.slides-thumbs button.on { border-color: var(--orange); opacity: 1; box-shadow: 0 0 0 1px var(--orange); }
+.slides-thumbs b { position: absolute; left: 4px; top: 2px; font: 700 10px var(--mono); color: #fff; text-shadow: 0 0 4px #000; }
+@media (orientation: portrait) { #slides::before { content: 'ПОВЕРНІТЬ ТЕЛЕФОН ГОРИЗОНТАЛЬНО'; position: absolute; left: 0; right: 0; bottom: 8vh; z-index: 2; text-align: center; font: 500 10px var(--mono); letter-spacing: .25em; color: rgba(255,255,255,.45); } }

@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221221';
+import { createStore } from './store.js?v=202611221224';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221221';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221221';
+} from './data.js?v=202611221224';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES } from './campaign.js?v=202611221224';
 
-const VERSION = '202611221221';
+const VERSION = '202611221224';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -731,7 +731,7 @@ function renderTray() {
 
 async function bootPlayer() {
   await store.ensureAnon();
-  subs.push(store.on('game/state', v => { S.state = v; renderPlayer(); }));
+  subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderPlayer(); }));
   subs.push(store.on('game/seats', v => {
     S.seats = v || {};
     const id = myCharId();
@@ -853,6 +853,41 @@ function renderCrew() {
   }).join('');
 }
 
+// ---------- вступ: слайди ----------
+function renderSlides() {
+  if (IS_GM_PAGE) return;
+  const sl = S.state && S.state.slides;
+  let el = document.getElementById('slides');
+  if (!sl) { if (el) el.remove(); UI.slideKey = null; return; }
+  const key = sl.ts + '|' + sl.i;
+  if (key === UI.slideKey && el) return;
+  if (UI.slidesHidden === sl.ts) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'slides';
+    el.innerHTML = `<div class="slides-stage"></div><div class="slides-ui"><span class="slides-n"></span><button class="ghost small" data-act="slidesHide">✕</button></div>`;
+    document.body.appendChild(el);
+    INTRO_SLIDES.forEach(src => { const im = new Image(); im.src = src; });   // попереднє завантаження
+  }
+  UI.slideKey = key;
+  const i = clamp(sl.i, 0, INTRO_SLIDES.length - 1), src = INTRO_SLIDES[i];
+  const stage = el.querySelector('.slides-stage');
+  const fr = document.createElement('div'); fr.className = 'slide';
+  fr.innerHTML = `<div class="slide-bg" style="background-image:url('${src}')"></div><img src="${src}" alt="">`;
+  stage.appendChild(fr);
+  requestAnimationFrame(() => requestAnimationFrame(() => fr.classList.add('on')));
+  [...stage.children].slice(0, -1).forEach(o => { o.classList.remove('on'); setTimeout(() => o.remove(), 1300); });
+  el.querySelector('.slides-n').textContent = `${i + 1} / ${INTRO_SLIDES.length}`;
+}
+function slidesPanelHTML() {
+  const sl = S.state && S.state.slides;
+  const n = INTRO_SLIDES.length;
+  if (!sl) return `<h4>ВСТУП · СЛАЙДИ</h4><div class="row"><button class="primary small" data-act="slidesStart">▶ ПОКАЗАТИ ВСІМ (${n})</button></div>`;
+  return `<h4>ВСТУП · СЛАЙДИ <span class="live">НАЖИВО ${sl.i + 1}/${n}</span></h4>
+    <div class="slides-thumbs">${INTRO_SLIDES.map((src, i) => `<button class="${i === sl.i ? 'on' : ''}" data-act="slidesGo" data-i="${i}" style="background-image:url('${src}')"><b>${i + 1}</b></button>`).join('')}</div>
+    <div class="row"><button class="ghost small" data-act="slidesPrev" ${sl.i ? '' : 'disabled'}>◀ НАЗАД</button><button class="primary small" data-act="slidesNext" ${sl.i < n - 1 ? '' : 'disabled'}>ДАЛІ ▶</button><button class="danger small" data-act="slidesStop">ЗАВЕРШИТИ</button></div>
+    <div class="muted small">Стрілки ← → на клавіатурі теж перемикають слайди.</div>`;
+}
+
 function renderGMControls() {
   const el = $('#ctl'); if (!el) return;
   const cuts = Object.entries((S.gm && S.gm.cutscenes) || {});
@@ -869,6 +904,7 @@ function renderGMControls() {
     <h4>ҐРЕТА КАЖЕ</h4>
     <textarea id="gretaText" rows="2" placeholder="Текст з'явиться в усіх на екрані">${esc(keepOpen)}</textarea>
     <div class="row"><label class="chk"><input type="checkbox" id="gretaVoice" checked> озвучити</label><button class="primary small" data-act="gretaSay">СКАЗАТИ</button><button class="ghost small" data-act="gretaClear">ПРИБРАТИ</button></div>
+    ${slidesPanelHTML()}
     <h4>КАТ-СЦЕНИ</h4>
     <div class="cuts">${cuts.length ? cuts.map(([k, v]) => `<div class="cutrow"><span>${esc(v.title)}</span><button class="ghost xs" data-act="playCut" data-k="${k}">▶ ДЛЯ ВСІХ</button><button class="ghost xs" data-act="delCut" data-k="${k}">✕</button></div>`).join('') : '<div class="muted">Додайте відео (YouTube або пряме посилання .mp4).</div>'}</div>
     <div class="row"><input id="cutTitle" placeholder="Назва"><input id="cutUrl" placeholder="URL відео"><button class="ghost small" data-act="addCut">+</button></div>
@@ -1159,7 +1195,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221221')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221224')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
@@ -1369,6 +1405,12 @@ const actions = {
   view(el) { UI.view = el.dataset.v; renderMain(true); },
   nextImg() { UI.imgIdx++; renderMain(true); },
   voice() { UI.voice = !UI.voice; if (UI.voice) speak('Голос Ґрети увімкнено.'); renderPlayer(); },
+  async slidesStart() { await store.update('game/state', { slides: { i: 0, ts: Date.now() } }); },
+  async slidesGo(el) { const sl = ST().slides; if (!sl) return; await store.update('game/state/slides', { i: clamp(+el.dataset.i, 0, INTRO_SLIDES.length - 1) }); },
+  async slidesNext() { const sl = ST().slides; if (sl && sl.i < INTRO_SLIDES.length - 1) await store.update('game/state/slides', { i: sl.i + 1 }); },
+  async slidesPrev() { const sl = ST().slides; if (sl && sl.i > 0) await store.update('game/state/slides', { i: sl.i - 1 }); },
+  async slidesStop() { await store.update('game/state', { slides: null }); },
+  slidesHide() { UI.slidesHidden = (ST().slides || {}).ts; renderSlides(); },
   skipCut() { UI.dismissedCut = UI.cutTs; $('#cut').innerHTML = ''; },
   closeGreta() { $('#greta').innerHTML = ''; },
   // ведучий
@@ -1507,6 +1549,11 @@ document.addEventListener('toggle', e => {
   if (d.open) UI.openSec.add(d.dataset.sec); else UI.openSec.delete(d.dataset.sec);
 }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'chatText') actions.chatSend(); });
+document.addEventListener('keydown', e => {
+  if (!IS_GM_PAGE || !ST().slides || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  if (e.key === 'ArrowRight' || e.key === 'PageDown') { e.preventDefault(); actions.slidesNext(); }
+  if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); actions.slidesPrev(); }
+});
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'joinName' && UI.pick) actions.join(); });
 
 const introStart = Date.now();
