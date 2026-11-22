@@ -1,5 +1,5 @@
 // Шар даних: Firebase Realtime Database або демо-режим (localStorage, синхронізація між вкладками).
-import { firebaseConfig } from './config.js?v=202611221408';
+import { firebaseConfig } from './config.js?v=202611221505';
 
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
 
@@ -19,6 +19,9 @@ async function firebaseStore(opts) {
   if (opts.perTab) await A.setPersistence(auth, A.browserSessionPersistence);
   const first = await new Promise(res => { const off = A.onAuthStateChanged(auth, u => { off(); res(u); }); });
 
+  // помилка запису називає шлях — так легше зрозуміти, яке правило бази не пустило
+  const tag = (p, pr) => Promise.resolve(pr).catch(e => { const err = new Error(`${e.code || e.message} · ${p} · uid ${(auth.currentUser && auth.currentUser.uid || '—').slice(0, 6)}`); err.code = e.code; console.error('write', p, e); throw err; });
+  A.onAuthStateChanged(auth, u => { if (u) s.user = u; });
   const s = {
     mode: 'firebase',
     user: first,
@@ -40,10 +43,10 @@ async function firebaseStore(opts) {
       if (limit) r = D.query(r, D.limitToLast(limit));
       return D.onValue(r, snap => cb(snap.val()), err => { console.warn('read', path, err.message); cb(null, err); });
     },
-    set: (p, v) => D.set(D.ref(db, p), v),
-    update: (p, v) => D.update(D.ref(db, p), v),
-    push: (p, v) => D.push(D.ref(db, p), { ...v, ts: D.serverTimestamp() }),
-    remove: p => D.remove(D.ref(db, p)),
+    set: (p, v) => tag(p, D.set(D.ref(db, p), v)),
+    update: (p, v) => tag(p, D.update(D.ref(db, p), v)),
+    push: (p, v) => tag(p, D.push(D.ref(db, p), { ...v, ts: D.serverTimestamp() })),
+    remove: p => tag(p, D.remove(D.ref(db, p))),
     async claim(p, v) {
       const r = await D.runTransaction(D.ref(db, p), cur => (cur ? undefined : v));
       return r.committed;
