@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221330';
+import { createStore } from './store.js?v=202611221344';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221330';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221330';
+} from './data.js?v=202611221344';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221344';
 
-const VERSION = '202611221330';
+const VERSION = '202611221344';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22,7 +22,7 @@ if (MOBILE) document.documentElement.classList.add('mobile');
 
 let store;
 const S = { goals: {}, chat: {}, requests: {}, seats: {}, chars: {}, state: null, log: {}, secret: null, secrets: {}, gm: {}, isAdmin: false };
-window.__kv = { S, get uid() { return store && store.uid; } };   // для діагностики з консолі
+window.__kv = { S, get uid() { return store && store.uid; }, get mus() { return Object.fromEntries(Object.entries(MUS.els).map(([k, a]) => [k, { paused: a.paused, vol: +a.volume.toFixed(2), t: +a.currentTime.toFixed(1) }])); } };   // для діагностики з консолі
 const UI = {
   pick: null, sheetOpen: true, secretOpen: false, target: null, skill: null,
   adv: false, dis: false, lastRoll: null, panicPrompt: false, cutTs: null, dismissedCut: null,
@@ -761,7 +761,7 @@ function renderTray() {
 
 async function bootPlayer() {
   await store.ensureAnon();
-  subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderRoundCut(); renderPlayer(); }));
+  subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderRoundCut(); musicSync(); renderPlayer(); }));
   subs.push(store.on('game/seats', v => {
     S.seats = v || {};
     const id = myCharId();
@@ -869,7 +869,7 @@ function renderWatch() {
 async function bootWatch() {
   await store.ensureAnon();
   document.title = 'STS-187 · Трансляція';
-  subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderRoundCut(); renderWatch(); }));
+  subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderRoundCut(); musicSync(); renderWatch(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; renderWatch(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; renderWatch(); }));
   subs.push(store.on('game/goals', v => { S.goals = v || {}; renderWatch(); }));
@@ -923,6 +923,52 @@ function renderCrew() {
       ${seat ? `<button class="ghost xs" data-act="setTurn" data-id="${c.id}">дати хід</button> <button class="ghost xs" data-act="kick" data-id="${c.id}">звільнити місце</button>` : ''}
     </div>`;
   }).join('');
+}
+
+// ---------- музика ----------
+const MUSIC = { main: 'assets/music/main.mp3', ambient: 'assets/music/ambient.mp3' };
+const MUSIC_LABEL = { main: 'ГОЛОВНА ТЕМА', ambient: 'ФОН' };
+const MUS = { cur: null, els: {}, vol: +(localStorage.getItem('kvitka-vol') ?? 0.5) };
+UI.musicMute = localStorage.getItem('kvitka-mute') === '1';
+function wantedTrack() {
+  const m = ST().music || { auto: true };
+  if (!m.auto) return m.track || null;
+  const ph = ST().phase;
+  return ph === 'play' ? 'ambient' : 'main';
+}
+function musicSync() {
+  if (!S.state) return;
+  const allowed = UI.audioOK && !UI.musicMute && (!IS_GM_PAGE || UI.gmHear);
+  const want = allowed ? wantedTrack() : null;
+  if (want === MUS.cur) return;
+  MUS.cur = want;
+  if (want && !MUS.els[want]) { const a = new Audio(MUSIC[want]); a.loop = true; a.preload = 'auto'; a.volume = 0; MUS.els[want] = a; }
+  if (want) { const a = MUS.els[want]; a.play().catch(() => { MUS.cur = null; }); }
+  musicBtn();
+}
+setInterval(() => {                       // плавні переходи й приглушення під кат-сцени та голос Ґрети
+  const duck = document.getElementById('rcut') || (('speechSynthesis' in window) && speechSynthesis.speaking) || document.querySelector('.cutscene');
+  for (const [k, a] of Object.entries(MUS.els)) {
+    const target = k === MUS.cur ? MUS.vol * (duck ? 0.3 : 1) : 0;
+    const v = a.volume + Math.sign(target - a.volume) * Math.min(Math.abs(target - a.volume), 0.04);
+    a.volume = clamp(v, 0, 1);
+    if (k !== MUS.cur && a.volume === 0 && !a.paused) a.pause();
+  }
+}, 100);
+function musicBtn() {
+  if (IS_GM_PAGE || !UI.audioOK) return;
+  let b = document.getElementById('musicBtn');
+  if (!b) { b = document.createElement('button'); b.id = 'musicBtn'; b.className = 'music-btn ghost small'; b.dataset.act = 'musicMute'; document.body.appendChild(b); }
+  b.textContent = UI.musicMute ? '♪ ВИМК' : '♪';
+  b.title = UI.musicMute ? 'Увімкнути музику' : 'Вимкнути музику';
+  b.classList.toggle('off', !!UI.musicMute);
+}
+function musicPanelHTML() {
+  const m = ST().music || { auto: true };
+  const btn = (key, label) => { const on = key === 'auto' ? m.auto : (!m.auto && (m.track || null) === key); return `<button class="tog ${on ? 'on' : ''}" data-act="musicSet" data-t="${key === null ? 'none' : key}">${label}</button>`; };
+  return `<h4>МУЗИКА</h4><div class="row music-row">${btn('auto', 'АВТО')}${btn('main', 'ГОЛОВНА')}${btn('ambient', 'ФОН')}${btn(null, 'ТИША')}</div>
+    <div class="row"><span class="muted small">${m.auto ? `Авто: до кампанії — головна тема, під час гри — фон. Зараз: ${MUSIC_LABEL[wantedTrack()] || 'тиша'}.` : `Грає: ${MUSIC_LABEL[m.track] || 'тиша'}.`}</span>
+    <label class="chk"><input type="checkbox" data-act="gmHear" ${UI.gmHear ? 'checked' : ''}> чути на пульті</label></div>`;
 }
 
 // ---------- кат-сцена кінця кола ----------
@@ -1011,6 +1057,7 @@ function renderGMControls() {
     <textarea id="gretaText" rows="2" placeholder="Текст з'явиться в усіх на екрані">${esc(keepOpen)}</textarea>
     <div class="row"><label class="chk"><input type="checkbox" id="gretaVoice" checked> озвучити</label><button class="primary small" data-act="gretaSay">СКАЗАТИ</button><button class="ghost small" data-act="gretaClear">ПРИБРАТИ</button></div>
     ${slidesPanelHTML()}
+    ${musicPanelHTML()}
     <h4>КАТ-СЦЕНИ</h4>
     <div class="cuts">${cuts.length ? cuts.map(([k, v]) => `<div class="cutrow"><span>${esc(v.title)}</span><button class="ghost xs" data-act="playCut" data-k="${k}">▶ ДЛЯ ВСІХ</button><button class="ghost xs" data-act="delCut" data-k="${k}">✕</button></div>`).join('') : '<div class="muted">Додайте відео (YouTube або пряме посилання .mp4).</div>'}</div>
     <div class="row"><input id="cutTitle" placeholder="Назва"><input id="cutUrl" placeholder="URL відео"><button class="ghost small" data-act="addCut">+</button></div>
@@ -1309,8 +1356,8 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221330')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
-  subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
+  try { S.items = (await import('./gm-items.js?v=202611221344')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  subs.push(store.on('game/state', v => { S.state = v; renderGM(); musicSync(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
   subs.push(store.on('game/secrets', v => { S.secrets = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('textarea[id^=sec-]')) renderCrew(); }));
@@ -1532,6 +1579,9 @@ const actions = {
   async slidesNext() { const sl = ST().slides; if (sl && sl.i < INTRO_SLIDES.length - 1) await store.update('game/state/slides', { i: sl.i + 1 }); },
   async slidesPrev() { const sl = ST().slides; if (sl && sl.i > 0) await store.update('game/state/slides', { i: sl.i - 1 }); },
   async slidesStop() { await store.update('game/state', { slides: null }); },
+  async musicSet(el) { const t = el.dataset.t; await store.update('game/state', { music: t === 'auto' ? { auto: true } : { auto: false, track: t === 'none' ? null : t } }); },
+  gmHear(el) { UI.gmHear = el.checked; UI.audioOK = true; musicSync(); },
+  musicMute() { UI.musicMute = !UI.musicMute; localStorage.setItem('kvitka-mute', UI.musicMute ? '1' : '0'); musicSync(); musicBtn(); },
   rcNext(el, e) { UI.rcI++; showRoundSlide(); },
   rcClose() { clearTimeout(UI.rcT); const el = document.getElementById('rcut'); if (el) el.remove(); },
   async rcTest() {
@@ -1707,7 +1757,7 @@ function closeIntro(now) {
   if (now) { el.remove(); return; }
   el.classList.add('out'); setTimeout(() => el.remove(), 900);
 }
-actions.enter = () => { closeIntro(); if (MOBILE) keepAwake(); if ('speechSynthesis' in window) speechSynthesis.getVoices(); };
+actions.enter = () => { closeIntro(); if (MOBILE) keepAwake(); if ('speechSynthesis' in window) speechSynthesis.getVoices(); UI.audioOK = true; MUS.cur = undefined; musicSync(); musicBtn(); };
 
 function toast(msg, good) {
   const t = document.createElement('div'); t.className = 'toast' + (good ? ' good' : ''); t.textContent = msg;

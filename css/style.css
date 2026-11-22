@@ -771,3 +771,10 @@ html.mobile .rc-cap { bottom: 11vh; }
 .watchside #wmap { overflow: hidden; flex: none; }
 .watchside .map { width: 180%; max-width: none; margin-left: -44%; }
 .watchside .map .outside-label { display: none; }
+
+/* музика */
+.music-btn { position: fixed; right: 12px; bottom: 26px; z-index: 115; background: rgba(10,12,14,.7); min-width: 38px; }
+.music-btn.off { color: var(--muted); text-decoration: line-through; }
+html.mobile .music-btn { bottom: auto; top: 54px; right: 8px; }
+.watch ~ .music-btn, body:has(.watch) .music-btn { bottom: 26px; }
+.music-row .tog { flex: 1; }
