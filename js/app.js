@@ -1,11 +1,11 @@
-import { createStore } from './store.js?v=202611221051';
+import { createStore } from './store.js?v=202611221056';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars
-} from './data.js?v=202611221051';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221051';
+} from './data.js?v=202611221056';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221056';
 
-const VERSION = '202611221051';
+const VERSION = '202611221056';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -322,15 +322,33 @@ function currentRoom() {
   return id && S.chars[id] ? S.chars[id].loc : 'A1';
 }
 
-function figuresHTML(list) {
-  const figs = list.filter(c => c.figure);
+// Композиція «як у кадрі»: ближній план (по пояс, збоку), середній, дальній (дрібніше й темніше).
+const FIG_SLOTS = {
+  near: { h: 128, b: -58, xs: [20, 78], bright: .92, blur: 0, z: 3 },
+  mid:  { h: 74,  b: -8,  xs: [62, 38], bright: .78, blur: 0, z: 2 },
+  far:  { h: 40,  b: 20,  xs: [50, 58, 36, 66], bright: .6, blur: .5, z: 1 }
+};
+const SLOT_ORDER = { 1: ['mid'], 2: ['near', 'far'], 3: ['near', 'mid', 'far'], 4: ['near', 'mid', 'far', 'far'] };
+function strHash(str) { let h = 2166136261; for (const ch of str) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+function figuresHTML(list, rid) {
+  let figs = list.filter(c => c.figure);
   if (!figs.length) return '';
-  const n = figs.length;
-  const span = Math.min(70, 18 * n);                 // ширина «сцени» у відсотках
-  return `<div class="figures">${figs.map((c, i) => {
-    const x = 50 + (n === 1 ? 0 : (i / (n - 1) - 0.5) * span);
-    const active = c.id === turnId();
-    return `<img class="figure ${active ? 'active' : ''}" src="assets/figures/${c.figure}" alt="${esc(c.name)}" title="${esc(c.name)}" style="left:${x}%;--d:${i * 0.12}s">`;
+  // стабільний порядок для кімнати; персонаж, чий хід, — на передньому плані
+  figs = figs.slice().sort((a, b) => strHash(rid + a.id) - strHash(rid + b.id));
+  const t = turnId(); const ti = figs.findIndex(c => c.id === t);
+  if (ti > 0) figs.unshift(figs.splice(ti, 1)[0]);
+  const slots = SLOT_ORDER[Math.min(figs.length, 4)];
+  const flip = strHash(rid) % 2 === 1;               // дзеркалимо композицію для різних кімнат
+  const used = {};
+  return `<div class="figures">${figs.slice(0, 4).map((c, i) => {
+    const key = slots[i]; const sl = FIG_SLOTS[key];
+    const k = used[key] = (used[key] || 0) + 1;
+    let x = sl.xs[(k - 1) % sl.xs.length] + ((strHash(rid + c.id) % 7) - 3);
+    if (flip) x = 100 - x;
+    const active = c.id === t;
+    const style = `left:${x}%;height:${sl.h}%;bottom:${sl.b}%;z-index:${sl.z};--br:${active ? sl.bright + .06 : sl.bright};--bl:${sl.blur}px;--d:${i * 0.12}s`;
+    return `<img class="figure fig-${key} ${active ? 'active' : ''}" src="assets/figures/${c.figure}" alt="${esc(c.name)}" title="${esc(c.name)}" style="${style}">`;
   }).join('')}</div>`;
 }
 
@@ -342,7 +360,7 @@ function locHTML(rid) {
     ${img ? `<img src="${img}" alt="${esc(r.name)}">` : `<div class="noimg">${r.outside ? 'ЗОВНІ. ВАКУУМ.' : 'НЕМАЄ ЗОБРАЖЕННЯ З КАМЕРИ'}</div>`}
     <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
     ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
-    ${figuresHTML(here)}
+    ${figuresHTML(here, r.id)}
     ${objectiveHTML(r.id)}
     <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}</div>
     ${IS_GM_PAGE ? `<select class="loc-pick" data-gmview="1" title="Дивитися іншу локацію">${ROOMS.map(x => `<option value="${x.id}" ${x.id === r.id ? 'selected' : ''}>${x.id} · ${esc(x.name)}</option>`).join('')}</select>` : ''}
