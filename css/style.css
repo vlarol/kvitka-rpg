@@ -437,3 +437,5 @@ h4::after { content: '///'; color: var(--orange); letter-spacing: 0; font-weight
 .chat-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
 .chat-tabs .unread { border-color: var(--accent); color: var(--accent); }
 @media (max-width: 760px) { .threat .lbl { display: none; } .objective { max-width: 70%; top: 64px; } }
+.ai-status { font-size: 12px; color: var(--accent); margin: 4px 0; white-space: pre-wrap; }
+.inbox .ai { border-left-color: var(--accent); color: #cfeef8; }

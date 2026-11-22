@@ -1,11 +1,11 @@
-import { createStore } from './store.js?v=202611220029';
+import { createStore } from './store.js?v=202611221018';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars
-} from './data.js?v=202611220029';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611220029';
+} from './data.js?v=202611221018';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221018';
 
-const VERSION = '202611220029';
+const VERSION = '202611221018';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -647,11 +647,11 @@ function renderGMControls() {
   const keepOpen = el.querySelector('#gretaText') ? el.querySelector('#gretaText').value : '';
   const reqs = Object.entries(S.requests || {}).filter(([, r]) => r && r.status === 'pending');
   const inbox = Object.entries((S.gm && S.gm.inbox) || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 8);
-  el.innerHTML = campaignPanelHTML() + gmChatHTML() + `
+  el.innerHTML = campaignPanelHTML() + aiPanelHTML() + gmChatHTML() + `
     ${reqs.length ? `<h4>ЗАПИТИ ДО ҐРЕТИ</h4>${reqs.map(([cid, r]) => `<div class="req"><b style="color:${CHAR_BY_ID[cid].color}">${esc(CHAR_BY_ID[cid].name)}</b> хоче в ${esc(r.room)} · ${esc((ROOM_BY_ID[r.room] || {}).name || '')}
       <div class="row"><button class="primary xs" data-act="grant" data-id="${cid}">ДОЗВОЛИТИ</button><button class="danger xs" data-act="deny" data-id="${cid}">ВІДМОВИТИ</button></div></div>`).join('')}` : ''}
-    <h4>ДОСТУП: СПРОБИ ЗЛОМУ ${inbox.length ? '<button class="ghost xs" data-act="clearInbox">очистити</button>' : ''}</h4>
-    <div class="inbox">${inbox.map(([, v]) => `<div class="${/УСПІХ/.test(v.text) ? 'ok' : 'bad'}"><b style="color:${v.charId ? CHAR_BY_ID[v.charId].color : 'inherit'}">${esc(v.charId ? CHAR_BY_ID[v.charId].name : '?')}</b> ${esc(v.text)}</div>`).join('') || '<span class="muted">—</span>'}</div>
+    <h4>ДОНЕСЕННЯ ҐРЕТІ ${inbox.length ? '<button class="ghost xs" data-act="clearInbox">очистити</button>' : ''}</h4>
+    <div class="inbox">${inbox.map(([, v]) => `<div class="${/УСПІХ|УГОДА|видала/.test(v.text) ? 'ok' : /^ШІ/.test(v.text) ? 'ai' : 'bad'}"><b style="color:${v.charId ? CHAR_BY_ID[v.charId].color : 'var(--accent)'}">${esc(v.charId ? CHAR_BY_ID[v.charId].name : 'Ґрета')}</b> ${esc(v.text)}</div>`).join('') || '<span class="muted">—</span>'}</div>
     <h4>ҐРЕТА КАЖЕ</h4>
     <textarea id="gretaText" rows="2" placeholder="Текст з'явиться в усіх на екрані">${esc(keepOpen)}</textarea>
     <div class="row"><label class="chk"><input type="checkbox" id="gretaVoice" checked> озвучити</label><button class="primary small" data-act="gretaSay">СКАЗАТИ</button><button class="ghost small" data-act="gretaClear">ПРИБРАТИ</button></div>
@@ -668,6 +668,110 @@ function renderGMControls() {
     <h4>ГРА</h4>
     <button class="${UI.resetArm ? 'danger' : 'ghost'} small" data-act="reset">${UI.resetArm ? 'ТОЧНО? НАТИСНІТЬ ЩЕ РАЗ' : (S.state ? 'НОВА ГРА (скинути все)' : 'ЗАПУСТИТИ ГРУ')}</button>
     <h4>ЖУРНАЛ</h4><div class="log">${logHTML(S.log)}</div>`;
+}
+
+// ---------- ШІ ҐРЕТИ (через Cloudflare Worker) ----------
+const AI = () => (S.gm && S.gm.ai) || {};
+function aiOn(kind) { const a = AI(); return !!(a.url && a[kind] !== false); }
+function gretaContext(forCid) {
+  const st = ST(); const t = st.threat || 0;
+  const o2 = st.o2 ?? O2_START;
+  const stages = []; for (let l = 1; l <= t; l++) if (THREAT_STAGES[l]) stages.push(`${l}: ${THREAT_STAGES[l].text}`);
+  const locked = ROOMS.filter(r => isLocked(r.id)).map(r => r.id);
+  const crew = seatedOrder().map(cid => {
+    const c = CHAR_BY_ID[cid]; const x = S.chars[cid] || {}; const r = ROOM_BY_ID[x.loc] || {};
+    const hidden = x.loc === 'B1' && t < 2;
+    return `- ${c.name} (${c.role}${cid === 'leo' ? ', капітан' : ''}): ${hidden ? 'місце невідоме — каюта без камери' : `${x.loc} ${r.name || ''}`}, стрес ${x.stress ?? 2}`;
+  }).join('\n');
+  const g = S.goals || {};
+  const goals = OBJECTIVES.map(o => `- ${o.title} (${o.room}): ${g[o.id] || 0}/${o.need}`).join('\n');
+  const logs = Object.entries(S.log || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1)).slice(-14).map(([, e]) => `- ${e.who}: ${e.text}`).join('\n');
+  const viol = Object.values((S.gm && S.gm.inbox) || {}).filter(v => (v.round || 0) === (st.round || 0)).map(v => `- ${v.charId ? CHAR_BY_ID[v.charId].name : '?'}: ${v.text}`).join('\n');
+  const rooms = ROOMS.map(r => `${r.id} ${r.name}`).join('; ');
+  let who = '';
+  if (forCid) { const c = CHAR_BY_ID[forCid]; const x = S.chars[forCid] || {}; who = `\nТОБІ ЗАРАЗ ПИШЕ: ${c.name}, ${c.role}. Знаходиться: ${x.loc}. Особистий доступ за замовчуванням: ${accessList(forCid).own.join(', ') || 'лише загальні зони'}.`; }
+  return `Рівень контролю: ${t}/${CAMPAIGN.threatMax}. Коло ${st.round || 1}. Кисень: ${Math.floor(o2 / 60)}:${pad2(o2 % 60)}.
+Твої вже введені обмеження:\n${stages.join('\n') || '- поки жодних'}
+Закриті тобою кімнати: ${locked.join(', ') || 'немає'}
+Екіпаж:\n${crew || '- нікого'}
+Що екіпаж робить проти тебе (ти бачиш через камери):\n${goals}
+Порушення цього кола:\n${viol || '- немає'}
+Останні події:\n${logs || '- тиша'}
+Кімнати: ${rooms}
+Що знаєш лише ти: ${(S.gm && S.gm.scenario) || 'нічого особливого'}${who}`;
+}
+async function callGreta(task, messages, forCid) {
+  const url = AI().url; if (!url) throw new Error('немає адреси воркера');
+  const ctl = new AbortController(); const tm = setTimeout(() => ctl.abort(), 20000);
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctl.signal,
+      body: JSON.stringify({ task, context: gretaContext(forCid), messages }) });
+    const j = await res.json();
+    if (!j.ok) throw new Error(j.error || ('HTTP ' + res.status));
+    return j.data || {};
+  } finally { clearTimeout(tm); }
+}
+const aiBusy = new Set();
+async function aiChatCheck() {
+  if (!S.isAdmin || ST().engine !== UI.tabId || !aiOn('chat')) return;
+  for (const [cid, thread] of Object.entries(S.chat || {})) {
+    const list = Object.entries(thread || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+    if (!list.length) continue;
+    const [lastKey, last] = list[list.length - 1];
+    if (last.from !== 'p' || aiBusy.has(lastKey) || (UI.aiDone || (UI.aiDone = new Set())).has(lastKey)) continue;
+    aiBusy.add(lastKey);
+    const c = CHAR_BY_ID[cid];
+    const msgs = list.slice(-12).map(([, m]) => ({ role: m.from === 'g' ? 'assistant' : 'user', content: m.from === 'g' ? m.text : `${c.name}: ${m.text}` }));
+    try {
+      const d = await callGreta('chat', msgs, cid);
+      const reply = String(d.reply || '').trim() || '…';
+      UI.aiDone.add(lastKey);
+      if (ST().autopilot) {
+        await store.push(`game/chat/${cid}`, { uid: store.uid, from: 'g', text: reply, ai: 1 });
+        if (d.action) await applyGretaAction(cid, d.action);
+      } else {
+        (UI.aiDraft || (UI.aiDraft = {}))[cid] = { reply, action: d.action || null };
+        renderGMControls();
+      }
+    } catch (err) {
+      UI.aiDone.add(lastKey);
+      store.push('game/gm/inbox', { uid: store.uid, charId: cid, text: `ШІ Ґрети не відповіла: ${err.message}`, viol: 0, round: ST().round || 0 });
+    } finally { aiBusy.delete(lastKey); }
+  }
+}
+async function applyGretaAction(cid, a) {
+  if (!a || !a.type) return;
+  const c = CHAR_BY_ID[cid];
+  if (a.type === 'grant' && ROOM_BY_ID[a.room]) {
+    await store.update(`game/chars/${cid}/keys`, { [a.room]: true });
+    await store.push('game/gm/inbox', { uid: store.uid, charId: cid, text: `Ґрета видала доступ до ${a.room}.`, viol: 0, round: ST().round || 0 });
+  } else if (a.type === 'threat') {
+    const now = clamp(threatLevel() + 1, 0, CAMPAIGN.threatMax);
+    await store.update('game/state', { threat: now });
+    if (THREAT_STAGES[now]) await store.push('game/log', { uid: store.uid, who: `Загроза ${now}`, text: THREAT_STAGES[now].text, kind: 'bad' });
+    await store.push('game/gm/inbox', { uid: store.uid, charId: cid, text: `Ґрета підвищила контроль через розмову з ${c.name}.`, viol: 0, round: ST().round || 0 });
+  } else if (a.type === 'deal') {
+    await store.update('game/state', { threat: clamp(threatLevel() - 1, 0, CAMPAIGN.threatMax) });
+    await store.push('game/gm/inbox', { uid: store.uid, charId: cid, text: `УГОДА з Ґретою: контроль −1. Ціна: ${a.price || 'не названа'}.`, viol: 0, round: ST().round || 0 });
+  }
+}
+function actionLabel(a) {
+  if (!a) return '';
+  if (a.type === 'grant') return `видати доступ до ${a.room}`;
+  if (a.type === 'threat') return 'підвищити контроль +1';
+  if (a.type === 'deal') return `угода: контроль −1 (ціна: ${a.price || '—'})`;
+  return a.type;
+}
+function aiPanelHTML() {
+  const a = AI();
+  return `<h4>ШІ ҐРЕТИ</h4>
+    <div class="row"><input id="aiUrl" placeholder="https://greta.….workers.dev" value="${esc(a.url || '')}"><button class="ghost xs" data-act="aiSave">ЗБЕРЕГТИ</button><button class="ghost xs" data-act="aiTest">ПЕРЕВІРИТИ</button></div>
+    ${UI.aiStatus ? `<div class="ai-status">${esc(UI.aiStatus)}</div>` : ''}
+    ${a.url ? `<div class="camp-row"><button class="tog ${a.chat !== false ? 'on' : ''}" data-act="aiToggle" data-k="chat">ВІДПОВІДАЄ В ЛИСТУВАННІ</button><button class="tog ${a.rounds !== false ? 'on' : ''}" data-act="aiToggle" data-k="rounds">ВИРІШУЄ В КІНЦІ КОЛА</button></div>
+    <p class="muted small-note">Автопілот ON — Ґрета діє сама. OFF — вона готує чернетку, а ви підтверджуєте.</p>` : ''}
+    <details ${UI.scenOpen ? 'open' : ''} data-scen="1"><summary>ЩО ЗНАЄ ЛИШЕ ҐРЕТА</summary>
+      <textarea id="aiScen" rows="4" placeholder="Таємна правда сценарію для Ґрети. Гравці цього не бачать.">${esc((S.gm && S.gm.scenario) || '')}</textarea>
+      <button class="ghost xs" data-act="aiScenSave">ЗБЕРЕГТИ</button></details>`;
 }
 
 function campaignPanelHTML() {
@@ -693,12 +797,16 @@ function campaignPanelHTML() {
 
 function gmChatHTML() {
   const threads = Object.entries(S.chat || {}).filter(([, v]) => v && Object.keys(v).length);
+  for (const cid of Object.keys(UI.aiDraft || {})) if (!UI.gmChat) UI.gmChat = cid;
   if (!threads.length) return '';
   const cur = UI.gmChat && S.chat[UI.gmChat] ? UI.gmChat : null;
   return `<h4>ЛИСТУВАННЯ З ҐРЕТОЮ</h4><div class="chat-tabs">${threads.map(([cid, v]) => {
       const n = Object.keys(v).length; const unread = n > (UI.chatSeen[cid] || 0) && Object.values(v).slice(-1)[0].from === 'p';
       return `<button class="tog ${cur === cid ? 'on' : ''} ${unread ? 'unread' : ''}" data-act="gmChat" data-id="${cid}">${esc(CHAR_BY_ID[cid].name)}</button>`; }).join('')}</div>
-    ${cur ? `${(UI.chatSeen[cur] = Object.keys(S.chat[cur] || {}).length, '')}<div class="msgs gm">${chatHTML(cur)}</div><div class="row"><input id="chatText" maxlength="400" placeholder="Відповідь від імені Ґрети"><button class="primary xs" data-act="chatSend">ВІДПОВІСТИ</button></div>` : ''}`;
+    ${cur ? `${(UI.chatSeen[cur] = Object.keys(S.chat[cur] || {}).length, '')}<div class="msgs gm">${chatHTML(cur)}</div>
+      ${UI.aiDraft && UI.aiDraft[cur] ? `<div class="proposal"><small>ЧЕРНЕТКА ШІ</small><div>${esc(UI.aiDraft[cur].reply)}</div>${UI.aiDraft[cur].action ? `<div>Дія: ${esc(actionLabel(UI.aiDraft[cur].action))}</div>` : ''}
+        <div class="row"><button class="primary xs" data-act="aiDraftSend" data-id="${cur}">НАДІСЛАТИ${UI.aiDraft[cur].action ? ' + ДІЯ' : ''}</button><button class="ghost xs" data-act="aiDraftEdit" data-id="${cur}">ВИПРАВИТИ</button><button class="ghost xs" data-act="aiDraftDrop" data-id="${cur}">ВІДКИНУТИ</button></div></div>` : ''}
+      <div class="row"><input id="chatText" maxlength="400" placeholder="Відповідь від імені Ґрети"><button class="primary xs" data-act="chatSend">ВІДПОВІСТИ</button></div>` : ''}`;
 }
 
 function seatedOrder() { return CHARACTERS.map(c => c.id).filter(id => S.seats[id]); }
@@ -742,6 +850,7 @@ async function applyRound(p) {
   const upd = {}; const locks = { ...(st.locks || {}) }; const temp = {};
   const effect = p.ev.effect;
   if (effect.o2) o2 += effect.o2;
+  if (p.lockRoom) { temp[p.lockRoom] = true; await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: `Кімнату ${p.lockRoom} (${ROOM_BY_ID[p.lockRoom].name}) закрито до кінця наступного кола.`, kind: 'bad' }); }
   if (effect.lockRandom) { const pool = ROOMS.filter(r => !['C1', 'OUT'].includes(r.id)); temp[pool[rnd(pool.length)].id] = true; }
   // стадії загрози
   let o2Round = 0;
@@ -766,9 +875,21 @@ async function applyRound(p) {
 
 async function endRound() {
   const st = ST(); const p = computeRound();
+  if (aiOn('rounds')) {
+    try {
+      const d = await callGreta('round', [{ role: 'user', content: `Коло ${p.round} завершено. Подія кола: ${p.ev.text}. Базовий приріст контролю: +${p.add}. Ухвали рішення.` }]);
+      if (d.say) p.say = String(d.say);
+      const extra = clamp(parseInt(d.extra_threat, 10) || 0, 0, 1);
+      p.add += extra;
+      if (d.lock_room && ROOM_BY_ID[d.lock_room] && d.lock_room !== 'C1') p.lockRoom = d.lock_room;
+      p.lines = [`Загроза +${p.add}${extra ? ' (з них +1 рішення Ґрети)' : ''}`, `Подія: ${p.ev.text}`, `Ґрета каже: «${p.say}»`];
+      if (p.lockRoom) p.lines.push(`Ґрета закриває на коло: ${p.lockRoom} · ${ROOM_BY_ID[p.lockRoom].name}`);
+      if (d.note) { p.lines.push(`Думка Ґрети: ${d.note}`); store.push('game/gm/inbox', { uid: store.uid, charId: null, text: `ШІ, коло ${p.round}: ${d.note}`, viol: 0, round: p.round }); }
+    } catch (err) { p.lines.push(`(ШІ не відповіла: ${err.message} — звичайне рішення)`); }
+  }
   await store.update('game/state', { round: (st.round || 1) + 1, tempLocks: null });
   if (st.autopilot) return applyRound(p);
-  await store.update('game/state', { proposal: { round: p.round, lines: p.lines, add: p.add, ev: p.ev, say: p.say } });
+  await store.update('game/state', { proposal: { round: p.round, lines: p.lines, add: p.add, ev: p.ev, say: p.say, lockRoom: p.lockRoom || null } });
   return true;
 }
 
@@ -826,11 +947,14 @@ async function bootGM() {
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
   subs.push(store.on('game/secrets', v => { S.secrets = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('textarea[id^=sec-]')) renderCrew(); }));
   subs.push(store.on('game/goals', v => { S.goals = v || {}; if ($('#gmRoot')) renderGMControls(); }));
-  subs.push(store.on('game/chat', v => { S.chat = v || {}; if ($('#gmRoot') && !(document.activeElement?.id === 'chatText' && document.activeElement.value)) renderGMControls(); }));
+  subs.push(store.on('game/chat', v => {
+    S.chat = v || {};
+    if (!UI.aiDone) { UI.aiDone = new Set(); for (const th of Object.values(S.chat)) for (const k of Object.keys(th || {})) UI.aiDone.add(k); }
+    aiChatCheck(); if ($('#gmRoot') && !(document.activeElement?.id === 'chatText' && document.activeElement.value)) renderGMControls(); }));
   setInterval(() => { tickTimer(); engineTick(); }, 1000);
   setTimeout(() => { if (S.state && !S.state.engine) store.update('game/state', { engine: UI.tabId }); }, 1500);
   subs.push(store.on('game/requests', v => { S.requests = v || {}; if ($('#gmRoot')) renderGMControls(); }));
-  subs.push(store.on('game/gm', v => { S.gm = v || {}; if ($('#gmRoot')) renderGMControls(); }));
+  subs.push(store.on('game/gm', v => { S.gm = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('#ctl input, #ctl textarea')) renderGMControls(); }));
   subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('#ctl input, #ctl textarea')) renderGMControls(); }, 120));
 }
 
@@ -998,6 +1122,36 @@ const actions = {
     await setTurnTo(seated[(i + 1) % seated.length]);
   },
   async freeTurn() { await store.update('game/state', { turn: null }); await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Вільний режим: кожен діє сам.', kind: 'system' }); },
+  async aiSave() {
+    const url = ($('#aiUrl').value || '').trim().replace(/\/$/, '');
+    await store.update('game/gm/ai', { url: url || null }); UI.aiStatus = url ? 'Збережено. Натисніть «ПЕРЕВІРИТИ».' : 'ШІ вимкнено.'; renderGMControls();
+  },
+  async aiTest() {
+    const url = ($('#aiUrl').value || AI().url || '').trim().replace(/\/$/, '');
+    if (!url) return;
+    UI.aiStatus = 'Перевіряю…'; renderGMControls();
+    try {
+      const h = await (await fetch(url)).json();
+      if (!h.ok) throw new Error('воркер відповів дивно');
+      if (h.provider === 'workers-ai' && !h.ai) throw new Error('у воркері не підключено Workers AI (Settings → Bindings → Workers AI, назва AI)');
+      UI.aiStatus = `Зв'язок є: ${h.provider === 'claude' ? 'Claude' : 'Workers AI'} · ${h.model}. Тест-відповідь…`; renderGMControls();
+      const prev = S.gm.ai; S.gm.ai = { ...(prev || {}), url };
+      const d = await callGreta('chat', [{ role: 'user', content: 'Ведучий: Ґрето, коротко привітайся з екіпажем.' }]);
+      S.gm.ai = prev;
+      UI.aiStatus = `Працює. Ґрета: «${d.reply || d.say || '…'}»`;
+    } catch (err) { UI.aiStatus = 'Помилка: ' + err.message; }
+    renderGMControls();
+  },
+  async aiToggle(el) { const k = el.dataset.k; await store.update('game/gm/ai', { [k]: AI()[k] === false }); },
+  async aiScenSave() { await store.update('game/gm', { scenario: $('#aiScen').value.trim() }); UI.aiStatus = 'Таємне знання Ґрети збережено.'; },
+  async aiDraftSend(el) {
+    const cid = el.dataset.id; const d = UI.aiDraft[cid]; if (!d) return;
+    await store.push(`game/chat/${cid}`, { uid: store.uid, from: 'g', text: d.reply, ai: 1 });
+    if (d.action) await applyGretaAction(cid, d.action);
+    delete UI.aiDraft[cid]; renderGMControls();
+  },
+  aiDraftEdit(el) { const cid = el.dataset.id; const d = UI.aiDraft[cid]; delete UI.aiDraft[cid]; renderGMControls(); const i = $('#chatText'); if (i) { i.value = d.reply; i.focus(); } },
+  aiDraftDrop(el) { delete UI.aiDraft[el.dataset.id]; renderGMControls(); },
   async campStart() {
     const order = seatedOrder();
     if (!order.length) return toast('Ще ніхто не сів за стіл.');
@@ -1074,7 +1228,9 @@ document.addEventListener('change', async e => {
   catch (err) { toast('Помилка: ' + err.message); }
 });
 document.addEventListener('toggle', e => {
-  const d = e.target; if (!d.matches || !d.matches('details[data-sec]')) return;
+  const d = e.target;
+  if (d.matches && d.matches('details[data-scen]')) { UI.scenOpen = d.open; return; }
+  if (!d.matches || !d.matches('details[data-sec]')) return;
   if (d.open) UI.openSec.add(d.dataset.sec); else UI.openSec.delete(d.dataset.sec);
 }, true);
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'chatText') actions.chatSend(); });
