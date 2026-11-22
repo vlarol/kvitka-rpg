@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221257';
+import { createStore } from './store.js?v=202611221330';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221257';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221257';
+} from './data.js?v=202611221330';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221330';
 
-const VERSION = '202611221257';
+const VERSION = '202611221330';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -16,7 +16,8 @@ const dN = n => rnd(n) + 1;
 const pad2 = n => String(n).padStart(2, '0');
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const IS_GM_PAGE = /[?&#]gm\b/.test(location.search + location.hash);
-const MOBILE = !IS_GM_PAGE && (matchMedia('(max-width: 760px)').matches || (matchMedia('(pointer: coarse)').matches && innerWidth < 1000));
+const IS_WATCH = !IS_GM_PAGE && /[?&#](watch|guest|stream)\b/.test(location.search + location.hash);   // глядач для стріму
+const MOBILE = !IS_GM_PAGE && !IS_WATCH && (matchMedia('(max-width: 760px)').matches || (matchMedia('(pointer: coarse)').matches && innerWidth < 1000));
 if (MOBILE) document.documentElement.classList.add('mobile');
 
 let store;
@@ -158,7 +159,7 @@ function mapHTML(clickable) {
   for (const c of CHARACTERS) {
     const st = S.chars[c.id]; if (!st || isOff(c.id)) continue;
     const seat = S.seats[c.id];
-    if (!IS_GM_PAGE) {
+    if (!IS_GM_PAGE && !IS_WATCH) {
       // гравець бачить лише себе і тих, хто в одній кімнаті з ним
       const mine = S.chars[myCharId()];
       if (c.id !== myCharId() && (!mine || mine.loc !== st.loc)) continue;
@@ -187,7 +188,7 @@ function mapHTML(clickable) {
   const myLoc = !IS_GM_PAGE && myCharId() && S.chars[myCharId()] ? S.chars[myCharId()].loc : null;
   ROBOTS.forEach((ro, i) => {
     const pos = rb[ro.id]; if (!pos) return; const r = ROOM_BY_ID[pos.loc]; if (!r) return;
-    if (!IS_GM_PAGE && pos.loc !== myLoc) return;
+    if (!IS_GM_PAGE && !IS_WATCH && pos.loc !== myLoc) return;
     tokens += `<div class="robot-token ${ro.type}" style="left:${r.anchor[0] + 1.6 + (i % 2) * 1.4}%;top:${r.anchor[1] - 2.2}%" title="${esc(ro.name)}">${ro.type === 'xt2' ? '2' : '3'}</div>`;
   });
   const outside = ROOM_BY_ID.OUT.rects[0];
@@ -329,6 +330,7 @@ function currentRoom() {
   }
   const t = turnId();
   if (t && S.chars[t]) return S.chars[t].loc;
+  if (IS_WATCH) { const f = seatedOrder().find(c => S.chars[c] && !isOff(c)); return f ? S.chars[f].loc : 'A1'; }
   const id = myCharId();
   return id && S.chars[id] ? S.chars[id].loc : 'A1';
 }
@@ -453,7 +455,7 @@ function revealBox() {
   const first = UI.revealTs === undefined; UI.revealTs = rv.ts;
   if (first && Date.now() - rv.ts > 15000) return;
   const me = myCharId();
-  if (rv.to !== 'all' && !(rv.to || []).includes(me)) return;
+  if (!IS_WATCH && rv.to !== 'all' && !(rv.to || []).includes(me)) return;
   el.innerHTML = `<div class="reveal" data-act="revealClose"><small>ЗНАЙДЕНО</small><img src="assets/items/${esc(rv.id)}.webp" alt=""><h2>${esc(rv.name)}</h2><p>${esc(rv.effect)}</p></div>`;
   if (navigator.vibrate) navigator.vibrate(80);
   clearTimeout(UI.revealT); UI.revealT = setTimeout(() => { el.innerHTML = ''; }, 9000);
@@ -466,7 +468,7 @@ function locHTML(rid) {
   if (img && MOBILE) img = img.replace('assets/rooms/', 'assets/rooms/m/');
   const anyone = here.length || robotsIn(r.id).length;
   return `<div class="loc ${UI.hideFigs ? 'nofigs' : ''}">
-    ${anyone ? `<button class="loc-eye ghost small" data-act="toggleFigs" style="${IS_GM_PAGE ? 'top:54px' : ''}" title="Сховати / показати персонажів">${UI.hideFigs ? '◉ ПОКАЗАТИ ЕКІПАЖ' : '◌ СХОВАТИ ЕКІПАЖ'}</button>` : ''}
+    ${anyone && !IS_WATCH ? `<button class="loc-eye ghost small" data-act="toggleFigs" style="${IS_GM_PAGE ? 'top:54px' : ''}" title="Сховати / показати персонажів">${UI.hideFigs ? '◉ ПОКАЗАТИ ЕКІПАЖ' : '◌ СХОВАТИ ЕКІПАЖ'}</button>` : ''}
     ${img ? `<img src="${img}" alt="${esc(r.name)}">` : `<div class="noimg">${r.outside ? 'ЗОВНІ. ВАКУУМ.' : 'НЕМАЄ ЗОБРАЖЕННЯ З КАМЕРИ'}</div>`}
     <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
     ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
@@ -476,7 +478,7 @@ function locHTML(rid) {
     ${objectiveHTML(r.id)}
     <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}${robotsIn(r.id).map(x => `<span class="chipc robot ${x.type}">${esc(x.name)}</span>`).join('')}</div>
     ${IS_GM_PAGE ? `<select class="loc-pick" data-gmview="1" title="Дивитися іншу локацію">${ROOMS.map(x => `<option value="${x.id}" ${x.id === r.id ? 'selected' : ''}>${x.id} · ${esc(x.name)}</option>`).join('')}</select>` : ''}
-    <button class="loc-map primary" data-act="view" data-v="map">МАПА КОРАБЛЯ</button>
+    ${IS_WATCH ? '' : '<button class="loc-map primary" data-act="view" data-v="map">МАПА КОРАБЛЯ</button>'}
   </div>`;
 }
 
@@ -490,7 +492,7 @@ function renderMain(force) {
   if (!force && key === UI.mainKey) return;
   UI.mainKey = key;
   const tabs = `<div class="viewtabs"><button class="tog ${UI.view === 'loc' ? 'on' : ''}" data-act="view" data-v="loc">ЛОКАЦІЯ</button><button class="tog ${UI.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">МАПА</button></div>`;
-  el.innerHTML = tabs + (UI.view === 'map' ? mapHTML(true) : locHTML(rid));
+  el.innerHTML = IS_WATCH ? locHTML(rid) : tabs + (UI.view === 'map' ? mapHTML(true) : locHTML(rid));
   if (MOBILE && UI.view === 'map') requestAnimationFrame(() => { el.scrollLeft = el.scrollWidth * 0.52 - el.clientWidth / 2; });
 }
 
@@ -835,6 +837,46 @@ function tickTimer() {
   el.innerHTML = `<span class="lbl">${ST().paused ? 'ПАУЗА' : 'ЧАС ХОДУ'}</span><b class="${t <= 30 ? 'hot' : ''}">${fmtSec(t)}</b>`;
 }
 
+// ---------- ГЛЯДАЧ (?watch) — для стріму ----------
+function renderWatch() {
+  if (!S.state) { $('#app').innerHTML = `<div class="center-msg cover"><div style="flex:1"></div>${ringHTML('evade')}<p>Гра ще не запущена.</p></div>`; return; }
+  if (!$('#watchRoot')) {
+    $('#app').innerHTML = `<div id="watchRoot" class="screen player watch">
+      <header class="topbar"><div class="brand">STS-187 <small>ТРАНСЛЯЦІЯ</small></div><div id="o2"></div><div id="threat" class="threatwrap"></div><div class="spacer"></div>
+        <div id="turn"></div><div id="timer" class="timer"></div><button class="ghost small" data-act="voice" id="voiceBtn"></button><div id="ring"></div></header>
+      <div id="greta"></div>
+      <main class="layout"><section class="mapcol" id="map"></section>
+        <aside class="watchside"><div id="wmap"></div><div id="wcrew"></div><h4>ЖУРНАЛ</h4><div id="log" class="log"></div></aside></main>
+      <div id="revealBox"></div><div id="cut"></div><div id="endScreen"></div></div>`;
+  }
+  $('#threat').innerHTML = threatHTML(); $('#o2').innerHTML = o2HTML(); $('#ring').innerHTML = ringHTML(S.state.mode);
+  $('#voiceBtn').textContent = UI.voice ? 'ГОЛОС: ON' : 'ГОЛОС: OFF';
+  endScreen(); tickTimer(); renderTurn(); renderMain();
+  const mk = JSON.stringify(S.chars) + JSON.stringify(S.seats) + JSON.stringify(ST().robots || {}) + JSON.stringify(ST().off || {}) + turnId() + JSON.stringify(S.goals || {});
+  if (mk !== UI.watchKey) {
+    UI.watchKey = mk;
+    $('#wmap').innerHTML = mapHTML(false).replace(/<div class="map-hint">[\s\S]*?<\/div>$/, '');
+    const t = turnId();
+    $('#wcrew').innerHTML = '<h4>ЕКІПАЖ</h4>' + CHARACTERS.filter(c => S.seats[c.id] && !isOff(c.id)).map(c => {
+      const st = S.chars[c.id] || {}; const r = ROOM_BY_ID[st.loc];
+      return `<div class="wc ${t === c.id ? 'on' : ''}" style="--c:${c.color}">${portraitHTML(c, 'sm')}<div><b>${esc(c.name)}</b> <span class="muted">${esc(S.seats[c.id].name)}</span>
+        <small>${r ? esc(r.id + ' · ' + r.name) : ''}</small></div><div class="wc-st"><span>HP ${st.health ?? c.health}</span><span class="${(st.stress || 0) >= 10 ? 'hot' : ''}">STR ${st.stress ?? 2}</span></div></div>`;
+    }).join('') || '<div class="muted">Поки нікого на борту.</div>';
+  }
+  $('#log').innerHTML = logHTML(S.log);
+  gretaBanner(); renderCutscene(); revealBox();
+}
+async function bootWatch() {
+  await store.ensureAnon();
+  document.title = 'STS-187 · Трансляція';
+  subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderRoundCut(); renderWatch(); }));
+  subs.push(store.on('game/seats', v => { S.seats = v || {}; renderWatch(); }));
+  subs.push(store.on('game/chars', v => { S.chars = v || {}; renderWatch(); }));
+  subs.push(store.on('game/goals', v => { S.goals = v || {}; renderWatch(); }));
+  subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#log')) $('#log').innerHTML = logHTML(S.log); }, 40));
+  setInterval(tickTimer, 1000);
+}
+
 // ---------- ВЕДУЧИЙ ----------
 function renderGM() {
   if (!$('#gmRoot')) {
@@ -960,7 +1002,7 @@ function renderGMControls() {
   const keepOpen = el.querySelector('#gretaText') ? el.querySelector('#gretaText').value : '';
   const reqs = Object.entries(S.requests || {}).filter(([, r]) => r && r.status === 'pending');
   const inbox = Object.entries((S.gm && S.gm.inbox) || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 8);
-  el.innerHTML = `<h4>ГРАВЦІ</h4><div class="row lobby-ctl"><span class="${ST().open ? 'live' : 'muted'}">${ST().open ? 'ВИБІР ПЕРСОНАЖІВ ВІДКРИТО' : 'ГРАВЦІ ЧЕКАЮТЬ НА БОРТУ'}</span><button class="${ST().open ? 'ghost' : 'primary'} small" data-act="openJoin">${ST().open ? 'ЗАКРИТИ ВИБІР' : '▶ ВІДКРИТИ ВИБІР ПЕРСОНАЖІВ'}</button></div>` + campaignPanelHTML() + aiPanelHTML() + gmChatHTML() + `
+  el.innerHTML = `<h4>ГРАВЦІ</h4><div class="row lobby-ctl"><span class="${ST().open ? 'live' : 'muted'}">${ST().open ? 'ВИБІР ПЕРСОНАЖІВ ВІДКРИТО' : 'ГРАВЦІ ЧЕКАЮТЬ НА БОРТУ'}</span><button class="${ST().open ? 'ghost' : 'primary'} small" data-act="openJoin">${ST().open ? 'ЗАКРИТИ ВИБІР' : '▶ ВІДКРИТИ ВИБІР ПЕРСОНАЖІВ'}</button></div><div class="muted small">Для стріму: <a href="./?watch" target="_blank">екран глядача ↗</a></div>` + campaignPanelHTML() + aiPanelHTML() + gmChatHTML() + `
     ${reqs.length ? `<h4>ЗАПИТИ ДО ҐРЕТИ</h4>${reqs.map(([cid, r]) => `<div class="req"><b style="color:${CHAR_BY_ID[cid].color}">${esc(CHAR_BY_ID[cid].name)}</b> хоче в ${esc(r.room)} · ${esc((ROOM_BY_ID[r.room] || {}).name || '')}
       <div class="row"><button class="primary xs" data-act="grant" data-id="${cid}">ДОЗВОЛИТИ</button><button class="danger xs" data-act="deny" data-id="${cid}">ВІДМОВИТИ</button></div></div>`).join('')}` : ''}
     <h4>ДОНЕСЕННЯ ҐРЕТІ ${inbox.length ? '<button class="ghost xs" data-act="clearInbox">очистити</button>' : ''}</h4>
@@ -1267,7 +1309,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221257')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221330')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
@@ -1484,7 +1526,7 @@ const actions = {
   async clearInbox() { await store.remove('game/gm/inbox'); },
   view(el) { UI.view = el.dataset.v; renderMain(true); },
   nextImg() { UI.imgIdx++; renderMain(true); },
-  voice() { UI.voice = !UI.voice; if (UI.voice) speak('Голос Ґрети увімкнено.'); renderPlayer(); },
+  voice() { UI.voice = !UI.voice; if (UI.voice) speak('Голос Ґрети увімкнено.'); if (IS_WATCH) renderWatch(); else renderPlayer(); },
   async slidesStart() { await store.update('game/state', { slides: { i: 0, ts: Date.now() } }); },
   async slidesGo(el) { const sl = ST().slides; if (!sl) return; await store.update('game/state/slides', { i: clamp(+el.dataset.i, 0, INTRO_SLIDES.length - 1) }); },
   async slidesNext() { const sl = ST().slides; if (sl && sl.i < INTRO_SLIDES.length - 1) await store.update('game/state/slides', { i: sl.i + 1 }); },
@@ -1678,9 +1720,9 @@ function toast(msg, good) {
     store = await createStore({ perTab: !IS_GM_PAGE && !MOBILE });
     document.body.insertAdjacentHTML('beforeend', `<div class="ver">v${VERSION}</div>`);
     if (store.mode === 'demo') document.body.insertAdjacentHTML('beforeend',
-      `<div class="demo-flag">ДЕМО-РЕЖИМ · без Firebase · ${IS_GM_PAGE ? '<a href="./">екран гравця</a>' : '<a href="?gm">пульт ведучого</a>'}</div>`);
+      `<div class="demo-flag">ДЕМО-РЕЖИМ · без Firebase · ${IS_GM_PAGE ? '<a href="./">екран гравця</a> · <a href="?watch">глядач</a>' : '<a href="?gm">пульт ведучого</a>'}</div>`);
     if (MOBILE) document.documentElement.dataset.tab = UI.tab;
-    if (IS_GM_PAGE) { await bootGM(); closeIntro(true); } else { await bootPlayer(); introReady(); }
+    if (IS_GM_PAGE) { await bootGM(); closeIntro(true); } else if (IS_WATCH) { await bootWatch(); introReady(); } else { await bootPlayer(); introReady(); }
   } catch (err) {
     console.error(err);
     closeIntro(true); $('#app').innerHTML = `<div class="center-msg"><h1>ЗБІЙ ЗВ'ЯЗКУ</h1><p>${esc(err.message)}</p></div>`;

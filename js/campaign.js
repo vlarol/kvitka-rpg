@@ -67,4 +67,4 @@ export const INTRO_SLIDES = ['01', '02', '03', '04', '05', '06', '07'].map(n => 
 // Кат-сцени кола: картинка assets/scenes/<id>.jpg (якщо її немає — показується темна картка з кільцем Ґрети).
 // id: t2…t10 — стадії загрози, e01…e10 — події кола, lock — Ґрета зачиняє кімнату, greta — репліка Ґрети,
 // win / lose / o2out — фінали.
-export const sceneImg = id => `assets/scenes/${id}.jpg?v=202611221257`;
+export const sceneImg = id => `assets/scenes/${id}.jpg?v=202611221330`;
