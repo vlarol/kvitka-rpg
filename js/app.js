@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221238';
+import { createStore } from './store.js?v=202611221246';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221238';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES } from './campaign.js?v=202611221238';
+} from './data.js?v=202611221246';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES } from './campaign.js?v=202611221246';
 
-const VERSION = '202611221238';
+const VERSION = '202611221246';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -762,6 +762,7 @@ async function bootPlayer() {
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#playerRoot')) { renderMain(); renderSheet(); } }));
   subs.push(store.on('game/log', v => {
     S.log = v || {}; if ($('#log')) $('#log').innerHTML = logHTML(S.log);
+    if (Object.keys(S.log).length < UI.logSeen) UI.logSeen = Object.keys(S.log).length;
     if (!UI.logInit) { UI.logInit = true; UI.logSeen = Object.keys(S.log).length; }
     if (UI.tab === 'log') UI.logSeen = Object.keys(S.log).length;
     if (MOBILE) renderTabbar();
@@ -919,7 +920,7 @@ function renderGMControls() {
     <div class="hidden-log">${hidden.map(([, v]) => `<div>${esc(v.text)}</div>`).join('') || '<span class="muted">—</span>'}</div>
     <h4>ГРА</h4>
     <button class="${UI.resetArm ? 'danger' : 'ghost'} small" data-act="reset">${UI.resetArm ? 'ТОЧНО? НАТИСНІТЬ ЩЕ РАЗ' : (S.state ? 'НОВА ГРА (скинути все)' : 'ЗАПУСТИТИ ГРУ')}</button>
-    <h4>ЖУРНАЛ</h4><div class="log">${logHTML(S.log)}</div>`;
+    <h4>ЖУРНАЛ <button class="ghost xs" data-act="clearLog">${UI.clearLogArm ? 'ТОЧНО? НАТИСНІТЬ ЩЕ РАЗ' : 'очистити'}</button></h4><div class="log">${logHTML(S.log)}</div>`;
 }
 
 // ---------- ШІ ҐРЕТИ (через Cloudflare Worker) ----------
@@ -1197,7 +1198,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221238')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221246')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
@@ -1526,6 +1527,13 @@ const actions = {
   async stopCut() { await store.update('game/state', { cutscene: null }); },
   async event(el) { await store.push('game/log', { uid: store.uid, who: 'Подія', text: EVENTS[+el.dataset.i], kind: 'event' }); },
   async eventRnd() { const i = rnd(6); await store.push('game/log', { uid: store.uid, who: `Подія d6=${i + 1}`, text: EVENTS[i], kind: 'event' }); },
+  async clearLog() {
+    if (!UI.clearLogArm) { UI.clearLogArm = true; renderGMControls(); setTimeout(() => { UI.clearLogArm = false; renderGMControls(); }, 4000); return; }
+    UI.clearLogArm = false;
+    await store.update('game', { log: null, 'gm/log': null });
+    await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Журнал очищено.', kind: 'system' });
+    toast('Журнал очищено', true);
+  },
   async reset() {
     if (S.state && !UI.resetArm) { UI.resetArm = true; renderGMControls(); setTimeout(() => { UI.resetArm = false; renderGMControls(); }, 4000); return; }
     UI.resetArm = false; await gmReset();
