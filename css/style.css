@@ -641,3 +641,7 @@ html.mobile .player .mapcol:has(.map) .viewtabs { position: sticky; left: 0; wid
 .msg.typing span { display: inline-block; margin-right: 3px; animation: dots 1.2s infinite; opacity: .3; }
 .msg.typing span:nth-of-type(2) { animation-delay: .2s; } .msg.typing span:nth-of-type(3) { animation-delay: .4s; }
 @keyframes dots { 50% { opacity: 1; } }
+
+/* мобільні: без важких фільтрів на великих фігурах (Safari/старі Android можуть їх не малювати) */
+html.mobile .figure, html.mobile .figure.fig-near, html.mobile .figure.active { filter: brightness(var(--br, .85)); }
+html.mobile .figures { transform: translateZ(0); }

@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221158';
+import { createStore } from './store.js?v=202611221219';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221158';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221158';
+} from './data.js?v=202611221219';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221219';
 
-const VERSION = '202611221158';
+const VERSION = '202611221219';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -508,6 +508,7 @@ function gretaBanner() {
   if (g.ts !== UI.gretaTs) {
     const first = UI.gretaTs === null;
     UI.gretaTs = g.ts;
+    if (first && Date.now() - (g.ts || 0) > 20000) return;   // старе повідомлення після перезавантаження не показуємо
     el.innerHTML = `<div class="greta-msg">${ringHTML(S.state.mode)}<div class="gm-text"><small>ҐРЕТА</small>${esc(g.text)}</div><button class="greta-x" data-act="closeGreta" aria-label="Закрити">✕</button></div>`;
     if (!first && g.voice && !IS_GM_PAGE) speak(g.text);
     clearTimeout(UI.gretaTimer);
@@ -1067,7 +1068,7 @@ async function applyRound(p) {
   const effect = p.ev.effect;
   if (effect.o2) o2 += effect.o2;
   if (p.lockRoom) { temp[p.lockRoom] = true; await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: `Кімнату ${p.lockRoom} (${ROOM_BY_ID[p.lockRoom].name}) закрито до кінця наступного кола.`, kind: 'bad' }); }
-  if (effect.lockRandom) { const pool = ROOMS.filter(r => !['C1', 'OUT'].includes(r.id)); temp[pool[rnd(pool.length)].id] = true; }
+  if (effect.lockRandom) { const pool = ROOMS.filter(r => !['C1', 'C2', 'C3', 'OUT'].includes(r.id)); temp[pool[rnd(pool.length)].id] = true; }
   // стадії загрози
   let o2Round = 0;
   for (let lvl = 1; lvl <= threat; lvl++) { const sg = THREAT_STAGES[lvl]; if (sg && sg.o2PerRound) o2Round = 30; }
@@ -1097,7 +1098,7 @@ async function endRound() {
       if (d.say) p.say = String(d.say);
       const extra = clamp(parseInt(d.extra_threat, 10) || 0, 0, 1);
       p.add += extra;
-      if (d.lock_room && ROOM_BY_ID[d.lock_room] && d.lock_room !== 'C1') p.lockRoom = d.lock_room;
+      if (d.lock_room && ROOM_BY_ID[d.lock_room] && !/^C[123]$/.test(d.lock_room)) p.lockRoom = d.lock_room;
       p.lines = [`Загроза +${p.add}${extra ? ' (з них +1 рішення Ґрети)' : ''}`, `Подія: ${p.ev.text}`, `Ґрета каже: «${p.say}»`];
       if (p.lockRoom) p.lines.push(`Ґрета закриває на коло: ${p.lockRoom} · ${ROOM_BY_ID[p.lockRoom].name}`);
       if (d.note) { p.lines.push(`Думка Ґрети: ${d.note}`); store.push('game/gm/inbox', { uid: store.uid, charId: null, text: `ШІ, коло ${p.round}: ${d.note}`, viol: 0, round: p.round }); }
@@ -1158,7 +1159,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221158')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221219')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
