@@ -707,3 +707,45 @@ html.mobile .player .loc:has(.loc-eye) .loc-next { top: 106px; }
 html.mobile .rc-cap { bottom: 11vh; }
 .endscreen { background: radial-gradient(ellipse at center, rgba(20,8,6,.55), rgba(0,0,0,.92)), var(--bg, none) center / cover no-repeat, #000; }
 .endscreen.won { background: radial-gradient(ellipse at center, rgba(8,20,18,.5), rgba(0,0,0,.92)), var(--bg, none) center / cover no-repeat, #000; }
+
+/* лобі та вибір персонажа */
+.lobby h2 { font-family: var(--head); letter-spacing: .25em; margin: 10px 0 0; }
+.lobby p { max-width: 460px; text-align: center; color: var(--muted); }
+.lobby .ring { width: 44px; height: 44px; }
+.join-hint { color: var(--muted); letter-spacing: .08em; margin: 18px 0 0; }
+.pick-detail { flex: 1; display: grid; grid-template-columns: minmax(220px, 34%) 1fr; gap: 28px; padding: 24px 0 40px; align-items: start; animation: rcIn .4s ease; }
+.pd-fig { position: sticky; top: 20px; height: min(78vh, 760px); display: flex; align-items: flex-end; justify-content: center;
+  background: radial-gradient(ellipse at 50% 85%, color-mix(in srgb, var(--c) 28%, transparent), transparent 70%); border-bottom: 2px solid var(--c); }
+.pd-fig img { max-height: 100%; max-width: 100%; object-fit: contain; filter: drop-shadow(0 20px 30px rgba(0,0,0,.6)); }
+.pd-fig .portrait { width: 70%; }
+.pd-body h2 { font-family: var(--head); font-size: 44px; letter-spacing: .06em; margin: 2px 0; color: var(--c); }
+.pd-cls { font: 600 11px var(--head); letter-spacing: .3em; color: var(--muted); }
+.pd-role { font-size: 17px; color: var(--text); }
+.pd-trait { border-left: 2px solid var(--c); padding: 8px 12px; background: rgba(255,255,255,.03); color: #d9d4cc; margin: 14px 0; line-height: 1.45; }
+.pd-body h4 { margin: 16px 0 8px; }
+.pd-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.pd-stat { background: var(--panel); border: 1px solid var(--line); padding: 8px 10px; }
+.pd-stat small { display: block; font: 600 10px var(--head); letter-spacing: .2em; color: var(--muted); }
+.pd-stat b { font: 600 24px var(--mono); }
+.pd-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pd-chips .chip { cursor: default; }
+.pd-back { display: block; margin-bottom: 14px; }
+.pd-cls { display: block; }
+.pd-confirm { display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap; }
+.pd-confirm input { flex: 1; min-width: 180px; }
+.pd-confirm .primary { padding: 14px 20px; }
+@media (max-width: 760px) {
+  .pick-detail { grid-template-columns: 1fr; gap: 12px; padding: 12px 0 30px; }
+  .pd-fig { position: static; height: 46vh; }
+  .pd-body h2 { font-size: 34px; }
+  .pd-stats { grid-template-columns: repeat(3, 1fr); }
+  .pd-confirm { flex-direction: column; } .pd-confirm .primary { width: 100%; }
+}
+/* персонаж поза грою в пульті */
+.crew { position: relative; }
+.crew-on { margin: 2px 0 4px; font-size: 11px; color: var(--muted); display: flex; gap: 4px; align-items: center; cursor: pointer; letter-spacing: .05em; }
+.crew.off { opacity: .45; }
+.crew.off .crew-on { color: var(--danger); }
+.lobby-ctl .live { color: var(--ok); }
+.crew .crew-on { display: inline-flex !important; width: auto; justify-content: flex-start; white-space: nowrap; }
+.crew .crew-on input { width: auto !important; flex: none; margin: 0; min-height: 0; padding: 0; }

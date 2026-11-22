@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221250';
+import { createStore } from './store.js?v=202611221257';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221250';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221250';
+} from './data.js?v=202611221257';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221257';
 
-const VERSION = '202611221250';
+const VERSION = '202611221257';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -156,7 +156,7 @@ function portraitHTML(c, cls = '') {
 function mapHTML(clickable) {
   const tokensByRoom = {};
   for (const c of CHARACTERS) {
-    const st = S.chars[c.id]; if (!st) continue;
+    const st = S.chars[c.id]; if (!st || isOff(c.id)) continue;
     const seat = S.seats[c.id];
     if (!IS_GM_PAGE) {
       // гравець бачить лише себе і тих, хто в одній кімнаті з ним
@@ -461,7 +461,7 @@ function revealBox() {
 
 function locHTML(rid) {
   const r = ROOM_BY_ID[rid] || ROOM_BY_ID.A1;
-  const here = CHARACTERS.filter(c => S.chars[c.id] && S.chars[c.id].loc === r.id);
+  const here = CHARACTERS.filter(c => S.chars[c.id] && S.chars[c.id].loc === r.id && !isOff(c.id));
   let img = r.imgs.length ? r.imgs[UI.imgIdx % r.imgs.length] : null;
   if (img && MOBILE) img = img.replace('assets/rooms/', 'assets/rooms/m/');
   const anyone = here.length || robotsIn(r.id).length;
@@ -658,22 +658,47 @@ function renderTurn() {
   el.innerHTML = turnBadge();
 }
 
+function renderLobby() {
+  $('#app').innerHTML = `<div class="center-msg cover lobby"><div style="flex:1"></div>${ringHTML(S.state.mode || 'assist')}
+    <h2>ЕКІПАЖ ЗБИРАЄТЬСЯ</h2><p>Ви на борту. Ведучий скоро покаже вступ і відкриє вибір персонажів — сторінка оновиться сама.</p></div>`;
+}
+function pickDetailHTML(c) {
+  const st = Object.entries(STAT_LABELS).map(([k, l]) => `<div class="pd-stat"><small>${l}</small><b>${c.stats[k]}</b></div>`).join('');
+  const sv = Object.entries(SAVE_LABELS).map(([k, l]) => `<div class="pd-stat"><small>${l}</small><b>${c.saves[k]}</b></div>`).join('');
+  const name = localStorage.getItem('kvitka-name') || '';
+  return `<div class="pick-detail" style="--c:${c.color}">
+    <div class="pd-fig">${c.figure ? `<img src="assets/figures/${c.figure}" alt="">` : portraitHTML(c)}</div>
+    <div class="pd-body">
+      <button class="ghost small pd-back" data-act="unpick">◂ ДО ЕКІПАЖУ</button>
+      <small class="pd-cls">${esc(c.cls)}</small><h2>${esc(c.name)}</h2><div class="pd-role">${esc(c.role)}</div>
+      ${c.trait ? `<p class="pd-trait">${esc(c.trait)}</p>` : ''}
+      <h4>STATS</h4><div class="pd-stats">${st}</div>
+      <h4>SAVES · HEALTH</h4><div class="pd-stats">${sv}<div class="pd-stat"><small>HEALTH</small><b>${c.health}</b></div></div>
+      <h4>НАВИЧКИ</h4><div class="pd-chips">${c.skills.map(([n, b]) => `<span class="chip">${esc(n)} <b>+${b}</b></span>`).join('')}</div>
+      ${c.gear && c.gear.length ? `<h4>СПОРЯДЖЕННЯ</h4><div class="pd-chips">${c.gear.map(g => `<span class="chip">${esc(g)}</span>`).join('')}</div>` : ''}
+      <div class="pd-confirm"><input id="joinName" maxlength="24" placeholder="ВАШЕ ІМ'Я" value="${esc(name)}">
+        <button class="primary" data-act="join">ПІДТВЕРДИТИ: ГРАЮ ЗА ${esc(c.name.toUpperCase())}</button></div>
+      <div id="joinErr" class="err"></div>
+    </div></div>`;
+}
 function renderJoin() {
-  const sel = UI.pick;
-  const cards = CHARACTERS.map(c => {
+  const sel = UI.pick && !S.seats[UI.pick] && !isOff(UI.pick) ? UI.pick : null;
+  const key = [!!S.state.open, sel, JSON.stringify(S.state.off || {}), JSON.stringify(Object.fromEntries(Object.entries(S.seats).map(([k, v]) => [k, v.name]))), S.state.mode].join('|');
+  if (key === UI.joinKey && document.querySelector('.join, .lobby')) return;
+  UI.joinKey = key;
+  if (!S.state.open) return renderLobby();
+  const cards = CHARACTERS.filter(c => !isOff(c.id) || S.seats[c.id]).map(c => {
     const taken = !!S.seats[c.id];
-    return `<button class="crew-card ${taken ? 'taken' : ''} ${sel === c.id ? 'sel' : ''}" data-act="${taken ? '' : 'pick'}" data-id="${c.id}">
+    return `<button class="crew-card ${taken ? 'taken' : ''}" data-act="${taken ? '' : 'pick'}" data-id="${c.id}">
       ${portraitHTML(c)}<div class="cc-name">${esc(c.name)}</div><div class="cc-role">${esc(c.role)}</div>
-      <div class="tag">${taken ? 'ЗАЙНЯТО · ' + esc(S.seats[c.id].name) : 'ВІЛЬНО'}</div>
+      <div class="tag">${taken ? 'ЗАЙНЯТО · ' + esc(S.seats[c.id].name) : 'ВІЛЬНО · ДЕТАЛІ ▸'}</div>
       ${taken ? `<span class="rejoin" data-act="rejoin" data-id="${c.id}">ЦЕ Я — ПОВЕРНУТИСЯ</span>` : ''}</button>`;
   }).join('');
-  const name = $('#joinName') ? $('#joinName').value : (localStorage.getItem('kvitka-name') || '');
+  const keepName = $('#joinName') ? $('#joinName').value : null;
   $('#app').innerHTML = `<div class="screen join">
     <header class="join-head"><h1><small>STS-187 · ДЕНЬ 547</small>CREW MANIFEST <em>///</em></h1><div class="ai">AI ${ringHTML(S.state.mode)}</div></header>
-    <div class="cards">${cards}</div>
-    <footer class="join-foot"><input id="joinName" maxlength="24" placeholder="ВАШЕ ІМ'Я" value="${esc(name)}">
-      <button class="primary" data-act="join" ${sel ? '' : 'disabled'}>НА БОРТ</button></footer>
-    <div id="joinErr" class="err"></div></div>`;
+    ${sel ? pickDetailHTML(CHAR_BY_ID[sel]) : `<p class="join-hint">Оберіть персонажа, щоб побачити його характеристики.</p><div class="cards">${cards}</div>`}</div>`;
+  if (keepName !== null && $('#joinName')) $('#joinName').value = keepName;
 }
 
 function renderSheet() {
@@ -756,7 +781,7 @@ async function bootPlayer() {
         store.remove(`game/requests/${id}`);
       });
     }
-    if (!$('#playerRoot') || !id) $('#app').innerHTML = '';
+    if (!id && $('#playerRoot')) $('#app').innerHTML = '';   // місце звільнили — назад до вибору
     watchMyChat();
     renderPlayer();
   }));
@@ -841,8 +866,9 @@ function renderCrew() {
     const st = S.chars[c.id] || {}; const seat = S.seats[c.id];
     const sec = (S.secrets[c.id] && S.secrets[c.id].text) || '';
     const room = ROOM_BY_ID[st.loc];
-    return `<div class="crew ${UI.gmSel === c.id ? 'sel' : ''}" style="--c:${c.color}">
+    return `<div class="crew ${UI.gmSel === c.id ? 'sel' : ''} ${isOff(c.id) ? 'off' : ''}" style="--c:${c.color}">
       <div class="crew-top" data-act="gmSel" data-id="${c.id}"><b>${esc(c.name)}${turnId() === c.id ? ' <span class="turn-dot">ХІД</span>' : ''}</b><span>${seat ? esc(seat.name) : '<i class="muted">вільно</i>'}</span></div>
+      <label class="crew-on" title="Зніміть, якщо за персонажа ніхто не грає: його не буде видно гравцям і його не можна обрати"><input type="checkbox" data-act="toggleOff" data-id="${c.id}" ${isOff(c.id) ? '' : 'checked'}> в грі</label>
       <div class="crew-loc"><select data-move="${c.id}" title="Перемістити персонажа">${ROOMS.map(r => `<option value="${r.id}" ${st.loc === r.id ? 'selected' : ''}>${r.id} · ${esc(r.name)}</option>`).join('')}</select></div>
       <div class="crew-row"><span>HP</span><button class="ghost xs" data-act="gHp" data-id="${c.id}" data-d="-1">−</button><b>${st.health ?? '?'}/${c.health}</b><button class="ghost xs" data-act="gHp" data-id="${c.id}" data-d="1">+</button>
         <span>W</span><b>${st.wounds ?? 0}/2</b><button class="ghost xs" data-act="gWound" data-id="${c.id}" data-d="1">+</button><button class="ghost xs" data-act="gWound" data-id="${c.id}" data-d="-1">−</button></div>
@@ -934,7 +960,7 @@ function renderGMControls() {
   const keepOpen = el.querySelector('#gretaText') ? el.querySelector('#gretaText').value : '';
   const reqs = Object.entries(S.requests || {}).filter(([, r]) => r && r.status === 'pending');
   const inbox = Object.entries((S.gm && S.gm.inbox) || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 8);
-  el.innerHTML = campaignPanelHTML() + aiPanelHTML() + gmChatHTML() + `
+  el.innerHTML = `<h4>ГРАВЦІ</h4><div class="row lobby-ctl"><span class="${ST().open ? 'live' : 'muted'}">${ST().open ? 'ВИБІР ПЕРСОНАЖІВ ВІДКРИТО' : 'ГРАВЦІ ЧЕКАЮТЬ НА БОРТУ'}</span><button class="${ST().open ? 'ghost' : 'primary'} small" data-act="openJoin">${ST().open ? 'ЗАКРИТИ ВИБІР' : '▶ ВІДКРИТИ ВИБІР ПЕРСОНАЖІВ'}</button></div>` + campaignPanelHTML() + aiPanelHTML() + gmChatHTML() + `
     ${reqs.length ? `<h4>ЗАПИТИ ДО ҐРЕТИ</h4>${reqs.map(([cid, r]) => `<div class="req"><b style="color:${CHAR_BY_ID[cid].color}">${esc(CHAR_BY_ID[cid].name)}</b> хоче в ${esc(r.room)} · ${esc((ROOM_BY_ID[r.room] || {}).name || '')}
       <div class="row"><button class="primary xs" data-act="grant" data-id="${cid}">ДОЗВОЛИТИ</button><button class="danger xs" data-act="deny" data-id="${cid}">ВІДМОВИТИ</button></div></div>`).join('')}` : ''}
     <h4>ДОНЕСЕННЯ ҐРЕТІ ${inbox.length ? '<button class="ghost xs" data-act="clearInbox">очистити</button>' : ''}</h4>
@@ -1100,6 +1126,7 @@ function gmChatHTML() {
       <div class="row"><input id="chatText" maxlength="400" placeholder="Відповідь від імені Ґрети"><button class="primary xs" data-act="chatSend">ВІДПОВІСТИ</button></div>` : ''}`;
 }
 
+function isOff(id) { return !!(S.state && S.state.off && S.state.off[id]); }
 function seatedOrder() { return CHARACTERS.map(c => c.id).filter(id => S.seats[id]); }
 
 async function startTurn(id) {
@@ -1218,7 +1245,7 @@ async function gmReset() {
   await store.update('game', {
     chars: initialChars(), seats: null, log: null,
     goals: null, chat: null, requests: null, seatcodes: null, 'gm/itemsFound': null,
-    state: { o2: O2_START, mode: 'assist', cutscene: null, greta: null, started: Date.now(), phase: 'setup', engine: UI.tabId, autopilot: true, turnSec: CAMPAIGN.turnSec }
+    state: { o2: O2_START, mode: 'assist', cutscene: null, greta: null, started: Date.now(), phase: 'setup', open: false, engine: UI.tabId, autopilot: true, turnSec: CAMPAIGN.turnSec }
   });
   await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Новий сеанс. Екіпаж STS-187, доповідайте.', kind: 'system' });
 }
@@ -1240,7 +1267,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221250')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221257')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
@@ -1263,7 +1290,10 @@ async function bootGM() {
 
 // ---------- дії ----------
 const actions = {
-  async pick(el) { UI.pick = el.dataset.id; renderJoin(); },
+  async pick(el) { UI.pick = el.dataset.id; UI.joinKey = null; renderJoin(); scrollTo(0, 0); },
+  unpick() { UI.pick = null; UI.joinKey = null; renderJoin(); },
+  async openJoin() { await store.update('game/state', { open: !ST().open }); },
+  async toggleOff(el) { const id = el.dataset.id; await store.update('game/state/off', { [id]: isOff(id) ? null : true }); },
   async join() {
     const name = ($('#joinName').value || '').trim();
     if (!name) { $('#joinErr').textContent = 'Введіть ім\'я.'; return; }
