@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221105';
+import { createStore } from './store.js?v=202611221128';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221105';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221105';
+} from './data.js?v=202611221128';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221128';
 
-const VERSION = '202611221105';
+const VERSION = '202611221128';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -16,13 +16,15 @@ const dN = n => rnd(n) + 1;
 const pad2 = n => String(n).padStart(2, '0');
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const IS_GM_PAGE = /[?&#]gm\b/.test(location.search + location.hash);
+const MOBILE = !IS_GM_PAGE && (matchMedia('(max-width: 760px)').matches || (matchMedia('(pointer: coarse)').matches && innerWidth < 1000));
+if (MOBILE) document.documentElement.classList.add('mobile');
 
 let store;
 const S = { goals: {}, chat: {}, requests: {}, seats: {}, chars: {}, state: null, log: {}, secret: null, secrets: {}, gm: {}, isAdmin: false };
 const UI = {
   pick: null, sheetOpen: true, secretOpen: false, target: null, skill: null,
   adv: false, dis: false, lastRoll: null, panicPrompt: false, cutTs: null, dismissedCut: null,
-  gretaTs: null, voice: false, lastTurn: undefined, view: IS_GM_PAGE ? 'map' : 'loc', imgIdx: 0, mainKey: null, openSec: new Set(), gmSel: null, resetArm: false, gmLast: null, tabId: Math.random().toString(36).slice(2, 10), advancing: false, chatOpen: null, chatSeen: {}
+  gretaTs: null, voice: false, lastTurn: undefined, view: IS_GM_PAGE ? 'map' : 'loc', imgIdx: 0, mainKey: null, openSec: new Set(), gmSel: null, resetArm: false, gmLast: null, tab: 'loc', logSeen: 0, badges: {}, rollOpen: false, tabId: Math.random().toString(36).slice(2, 10), advancing: false, chatOpen: null, chatSeen: {}
 };
 const subs = [];
 
@@ -401,7 +403,8 @@ function figuresHTML(list, rid) {
 function locHTML(rid) {
   const r = ROOM_BY_ID[rid] || ROOM_BY_ID.A1;
   const here = CHARACTERS.filter(c => S.chars[c.id] && S.chars[c.id].loc === r.id && (S.seats[c.id] || IS_GM_PAGE));
-  const img = r.imgs.length ? r.imgs[UI.imgIdx % r.imgs.length] : null;
+  let img = r.imgs.length ? r.imgs[UI.imgIdx % r.imgs.length] : null;
+  if (img && MOBILE) img = img.replace('assets/rooms/', 'assets/rooms/m/');
   return `<div class="loc">
     ${img ? `<img src="${img}" alt="${esc(r.name)}">` : `<div class="noimg">${r.outside ? 'ЗОВНІ. ВАКУУМ.' : 'НЕМАЄ ЗОБРАЖЕННЯ З КАМЕРИ'}</div>`}
     <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
@@ -425,6 +428,7 @@ function renderMain(force) {
   UI.mainKey = key;
   const tabs = `<div class="viewtabs"><button class="tog ${UI.view === 'loc' ? 'on' : ''}" data-act="view" data-v="loc">ЛОКАЦІЯ</button><button class="tog ${UI.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">МАПА</button></div>`;
   el.innerHTML = tabs + (UI.view === 'map' ? mapHTML(true) : locHTML(rid));
+  if (MOBILE && UI.view === 'map') requestAnimationFrame(() => { el.scrollLeft = el.scrollWidth * 0.52 - el.clientWidth / 2; });
 }
 
 function logHTML(entries) {
@@ -494,9 +498,12 @@ function renderPlayer() {
         <button class="ghost small secret-btn" data-act="secretModal" id="secretBtn">ТАЄМНА ЦІЛЬ</button>
         <button class="ghost small" data-act="voice" id="voiceBtn"></button><div id="who" class="who"></div><div id="ring"></div></header>
       <div id="greta"></div>
-      <main class="layout"><section class="mapcol" id="map"></section>
-        <aside class="sheet" id="sheet"></aside><aside class="logcol"><h4>ЖУРНАЛ</h4><div id="log" class="log"></div></aside></main>
-      <footer class="tray" id="tray"></footer><div id="cut"></div><div id="modal"></div><div id="endScreen"></div></div>`;
+      <main class="layout"><section class="mapcol" id="map" data-pane="loc"></section>
+        <aside class="sheet" id="sheet" data-pane="sheet"></aside><aside class="logcol" data-pane="log"><h4>ЖУРНАЛ</h4><div id="log" class="log"></div></aside>
+        <section class="chatpane" id="chatPane" data-pane="greta"></section></main>
+      <footer class="tray" id="tray" data-pane="dice"></footer>
+      <nav class="tabbar" id="tabbar"></nav><div id="turnFlash"></div>
+      <div id="cut"></div><div id="modal"></div><div id="endScreen"></div></div>`;
   }
   const c = CHAR_BY_ID[id];
   $('#threat').innerHTML = threatHTML();
@@ -510,6 +517,62 @@ function renderPlayer() {
   renderMain();
   $('#log').innerHTML = logHTML(S.log);
   renderSheet(); renderTray(); gretaBanner(); renderCutscene();
+  if (MOBILE) { renderTabbar(); if (UI.tab === 'greta') renderChatPane(); }
+}
+
+// ---------- мобільний режим: вкладки ----------
+const TABS = [['loc', 'ЛОКАЦІЯ', '◉'], ['sheet', 'ЛИСТ', '▤'], ['dice', 'КУБИКИ', '⬢'], ['log', 'ЖУРНАЛ', '≡'], ['greta', 'ҐРЕТА', '◯']];
+function setTab(t) {
+  UI.tab = t; document.documentElement.dataset.tab = t;
+  if (t === 'log') UI.logSeen = Object.keys(S.log || {}).length;
+  if (t === 'greta') { UI.badges.greta = 0; UI.chatOpen = myCharId(); renderChatPane(); } else if (UI.chatOpen && MOBILE) UI.chatOpen = null;
+  if (t === 'sheet') UI.badges.sheet = 0;
+  renderTabbar();
+  const pane = document.querySelector(`[data-pane="${t}"]`); if (pane) pane.scrollTop = pane.scrollTop;
+}
+function renderTabbar() {
+  const el = $('#tabbar'); if (!el) return;
+  const logNew = Math.max(0, Object.keys(S.log || {}).length - UI.logSeen);
+  const badge = { log: UI.tab === 'log' ? 0 : logNew, greta: UI.badges.greta || 0, sheet: (S.secret && UI.secretNew) ? 1 : 0, dice: myTurnActive() ? '!' : 0 };
+  document.documentElement.dataset.tab = UI.tab;
+  el.innerHTML = TABS.map(([k, l, ic]) => `<button class="${UI.tab === k ? 'on' : ''}" data-act="tab" data-t="${k}"><i>${ic}</i><span>${l}</span>${badge[k] ? `<b>${badge[k] === '!' ? '!' : Math.min(badge[k], 99)}</b>` : ''}</button>`).join('');
+}
+function renderChatPane() {
+  const el = $('#chatPane'); const id = myCharId(); if (!el || !id) return;
+  const keep = $('#chatText') ? $('#chatText').value : '';
+  el.innerHTML = `<div class="chat-head">${ringHTML(ST().mode)}<div><small>КАНАЛ ЗВ'ЯЗКУ · ПРИВАТНО</small><b>ҐРЕТА</b></div></div>
+    <div class="msgs" id="msgs">${chatHTML(id)}</div>
+    <div class="chat-input"><input id="chatText" maxlength="400" placeholder="Напишіть Ґреті…" value="${esc(keep)}"><button class="primary" data-act="chatSend">▶</button></div>`;
+  const m = $('#msgs'); if (m) m.scrollTop = m.scrollHeight;
+}
+function rollSheetHTML() {
+  const id = myCharId(); const c = CHAR_BY_ID[id]; const t = targetInfo(id); if (!t) return '';
+  const lr = UI.lastRoll;
+  const rankCls = lr ? (lr.rank >= 2 ? 'ok' : lr.rank === -1 ? '' : 'fail') : '';
+  return `<div class="modal-bg" data-act="rollClose"></div><div class="bottom-sheet">
+    <div class="grab"></div>
+    <small>ПЕРЕВІРКА</small><h2>${esc(t.label)} <span class="tgt">${t.total}</span></h2>
+    <div class="chips">${c.skills.map(([n, b], i) => `<button class="chip ${UI.skill === i ? 'sel' : ''}" data-act="skill" data-i="${i}">${esc(n)} <b>+${b}</b></button>`).join('')}</div>
+    <div class="mods"><button class="tog ${UI.adv ? 'on' : ''}" data-act="adv">ПЕРЕВАГА +</button><button class="tog ${UI.dis ? 'on' : ''}" data-act="dis">ПЕРЕШКОДА −</button></div>
+    <button class="primary big wide" data-act="check">КИНУТИ d100 · треба менше ${t.total}${myTurnActive() ? ' · 1 ДІЯ' : ''}</button>
+    <div class="result ${rankCls}">${lr ? `<b>${esc(lr.big)}</b><div><span>${esc(lr.label)}</span><small>${esc(lr.sub)}</small></div>` : ''}</div>
+    ${UI.panicPrompt ? '<button class="danger wide pulse" data-act="panic">КРИТИЧНИЙ ПРОВАЛ — ПЕРЕВІРКА ПАНІКИ d20</button>' : ''}
+    <button class="ghost wide" data-act="rollClose">ГОТОВО</button></div>`;
+}
+function renderRollSheet() {
+  if (!MOBILE || !UI.rollOpen) return;
+  $('#modal').innerHTML = rollSheetHTML();
+}
+let wakeLock = null;
+async function keepAwake() {
+  try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch {}
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && MOBILE && !IS_GM_PAGE) keepAwake(); });
+function flashMyTurn() {
+  if (navigator.vibrate) navigator.vibrate([180, 90, 180]);
+  const el = $('#turnFlash'); if (!el) return;
+  el.innerHTML = `<div class="turnflash" data-act="flashClose"><small>КОЛО ${ST().round || 1}</small><b>ВАШ ХІД</b><span>3 дії · ${fmtSec(ST().turnSec || CAMPAIGN.turnSec)}</span></div>`;
+  clearTimeout(UI.flashT); UI.flashT = setTimeout(() => { el.innerHTML = ''; }, 2600);
 }
 
 function turnBadge() {
@@ -523,8 +586,10 @@ function renderTurn() {
   const el = $('#turn'); if (!el) return;
   const t = turnId();
   if (t !== UI.lastTurn) {           // хід змінився — всі дивляться на локацію активного персонажа
+    const first = UI.lastTurn === undefined;
     UI.lastTurn = t; UI.imgIdx = 0;
     if (t && !IS_GM_PAGE) UI.view = 'loc';
+    if (!IS_GM_PAGE && t && t === myCharId() && inPlay() && !first) { flashMyTurn(); if (MOBILE && UI.tab !== 'dice') setTab('loc'); }
   }
   el.innerHTML = turnBadge();
 }
@@ -533,9 +598,10 @@ function renderJoin() {
   const sel = UI.pick;
   const cards = CHARACTERS.map(c => {
     const taken = !!S.seats[c.id];
-    return `<button class="crew-card ${taken ? 'taken' : ''} ${sel === c.id ? 'sel' : ''}" data-act="${taken ? '' : 'pick'}" data-id="${c.id}" ${taken ? 'disabled' : ''}>
+    return `<button class="crew-card ${taken ? 'taken' : ''} ${sel === c.id ? 'sel' : ''}" data-act="${taken ? '' : 'pick'}" data-id="${c.id}">
       ${portraitHTML(c)}<div class="cc-name">${esc(c.name)}</div><div class="cc-role">${esc(c.role)}</div>
-      <div class="tag">${taken ? 'ЗАЙНЯТО · ' + esc(S.seats[c.id].name) : 'ВІЛЬНО'}</div></button>`;
+      <div class="tag">${taken ? 'ЗАЙНЯТО · ' + esc(S.seats[c.id].name) : 'ВІЛЬНО'}</div>
+      ${taken ? `<span class="rejoin" data-act="rejoin" data-id="${c.id}">ЦЕ Я — ПОВЕРНУТИСЯ</span>` : ''}</button>`;
   }).join('');
   const name = $('#joinName') ? $('#joinName').value : (localStorage.getItem('kvitka-name') || '');
   $('#app').innerHTML = `<div class="screen join">
@@ -579,6 +645,7 @@ function renderSheet() {
 }
 
 function renderTray() {
+  renderRollSheet(); if (MOBILE) renderTabbar();
   const id = myCharId(); const el = $('#tray'); if (!id || !el) return;
   const t = targetInfo(id);
   const lr = UI.lastRoll;
@@ -614,7 +681,7 @@ async function bootPlayer() {
         const txt = s && s.text;
         if (txt && txt !== S.secret) { UI.secretNew = true; if (S._secretLoaded) toast('Ведучий надіслав вам таємну ціль. Кнопка «ТАЄМНА ЦІЛЬ» угорі.', true); }
         S._secretLoaded = true;
-        S.secret = txt; renderSheet(); updateSecretBtn();
+        S.secret = txt; renderSheet(); updateSecretBtn(); if (MOBILE) renderTabbar();
       });
       if (S._reqOff) S._reqOff();
       S._reqOff = store.on(`game/requests/${id}`, rq => {
@@ -630,7 +697,12 @@ async function bootPlayer() {
     renderPlayer();
   }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#playerRoot')) { renderMain(); renderSheet(); } }));
-  subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#log')) $('#log').innerHTML = logHTML(S.log); }, 80));
+  subs.push(store.on('game/log', v => {
+    S.log = v || {}; if ($('#log')) $('#log').innerHTML = logHTML(S.log);
+    if (!UI.logInit) { UI.logInit = true; UI.logSeen = Object.keys(S.log).length; }
+    if (UI.tab === 'log') UI.logSeen = Object.keys(S.log).length;
+    if (MOBILE) renderTabbar();
+  }, 80));
   subs.push(store.on('game/goals', v => { S.goals = v || {}; if ($('#playerRoot')) renderMain(); }));
   setInterval(tickTimer, 1000);
 }
@@ -643,10 +715,10 @@ function watchMyChat() {
     S.chat[id] = v || {};
     const list = Object.values(S.chat[id]);
     if (S._chatLoaded && list.length > prev && list[list.length - 1].from === 'g') {
-      if (UI.chatOpen !== id) { toast('Ґрета відповіла вам.', true); $('#chatBtn') && $('#chatBtn').classList.add('new'); }
+      if (UI.chatOpen !== id) { toast('Ґрета відповіла вам.', true); $('#chatBtn') && $('#chatBtn').classList.add('new'); UI.badges.greta = (UI.badges.greta || 0) + 1; if (navigator.vibrate) navigator.vibrate(60); renderTabbar(); }
     }
     S._chatLoaded = true;
-    if (UI.chatOpen === id) chatModal(id);
+    if (UI.chatOpen === id) { if (MOBILE) renderChatPane(); else chatModal(id); }
   });
 }
 function chatHTML(cid) {
@@ -999,7 +1071,7 @@ async function setTurnTo(id) {
 async function gmReset() {
   await store.update('game', {
     chars: initialChars(), seats: null, log: null,
-    goals: null, chat: null, requests: null,
+    goals: null, chat: null, requests: null, seatcodes: null,
     state: { o2: O2_START, mode: 'assist', cutscene: null, greta: null, started: Date.now(), phase: 'setup', engine: UI.tabId, autopilot: true, turnSec: CAMPAIGN.turnSec }
   });
   await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Новий сеанс. Екіпаж STS-187, доповідайте.', kind: 'system' });
@@ -1048,7 +1120,22 @@ const actions = {
     if (myCharId()) { $('#joinErr').textContent = 'Ви вже граєте за іншого персонажа.'; return; }
     const ok = await store.claim(`game/seats/${UI.pick}`, { uid: store.uid, name, ts: Date.now() });
     if (!ok) { $('#joinErr').textContent = 'Цього персонажа щойно зайняли. Оберіть іншого.'; UI.pick = null; }
-    else await logPush(`${name} на борту.`, 'system', UI.pick);
+    else {
+      const code = String(1000 + rnd(9000));
+      try { await store.set(`game/seatcodes/${UI.pick}`, { code }); localStorage.setItem('kvitka-code-' + UI.pick, code); } catch (e) { console.warn(e); }
+      await logPush(`${name} на борту.`, 'system', UI.pick);
+      setTimeout(() => toast(`Ваш код повернення: ${code}. Він знадобиться, якщо вас викине з гри.`, true), 600);
+    }
+  },
+  async rejoin(el) {
+    const cid = el.dataset.id;
+    const code = (prompt(`Код повернення для персонажа ${CHAR_BY_ID[cid].name}:`, localStorage.getItem('kvitka-code-' + cid) || '') || '').trim();
+    if (!code) return;
+    try {
+      await store.set(`game/seats/${cid}`, { uid: store.uid, name: S.seats[cid].name, ts: Date.now(), code });
+      await store.set(`game/seatcodes/${cid}`, { code });
+      toast('З поверненням на борт.', true);
+    } catch (e) { $('#joinErr').textContent = 'Код не підійшов. Попросіть ведучого звільнити місце.'; }
   },
   async leave() {
     const id = myCharId(); if (!id) return;
@@ -1059,6 +1146,7 @@ const actions = {
   secret() { UI.secretOpen = !UI.secretOpen; UI.secretNew = false; updateSecretBtn(); renderSheet(); },
   target(el) {
     const t = [el.dataset.k, el.dataset.key];
+    if (MOBILE) { UI.target = t; UI.rollOpen = true; UI.lastRoll = null; renderSheet(); renderTray(); return; }
     UI.target = UI.target && UI.target[0] === t[0] && UI.target[1] === t[1] ? null : t;
     renderSheet(); renderTray();
   },
@@ -1092,6 +1180,9 @@ const actions = {
     renderMain(true);
   },
   secretModal() { secretModal(); },
+  tab(el) { setTab(el.dataset.t); },
+  rollClose() { UI.rollOpen = false; $('#modal').innerHTML = ''; },
+  flashClose() { $('#turnFlash').innerHTML = ''; },
   async askXT2() {
     const id = myCharId(); if (!(await spendAP(1, 'Звернутися до ХТ2'))) return;
     const d = dN(6); let text;
@@ -1140,7 +1231,7 @@ const actions = {
     }
     renderTray();
   },
-  chatOpen() { const id = myCharId(); if (!id) return; UI.chatOpen = id; $('#chatBtn') && $('#chatBtn').classList.remove('new'); chatModal(id); },
+  chatOpen() { if (MOBILE) return setTab('greta'); const id = myCharId(); if (!id) return; UI.chatOpen = id; $('#chatBtn') && $('#chatBtn').classList.remove('new'); chatModal(id); },
   chatClose() { UI.chatOpen = null; $('#modal').innerHTML = ''; },
   async chatSend() {
     const text = ($('#chatText').value || '').trim(); if (!text) return;
@@ -1343,7 +1434,7 @@ function closeIntro(now) {
   if (now) { el.remove(); return; }
   el.classList.add('out'); setTimeout(() => el.remove(), 900);
 }
-actions.enter = () => { closeIntro(); if ('speechSynthesis' in window) speechSynthesis.getVoices(); };
+actions.enter = () => { closeIntro(); if (MOBILE) keepAwake(); if ('speechSynthesis' in window) speechSynthesis.getVoices(); };
 
 function toast(msg, good) {
   const t = document.createElement('div'); t.className = 'toast' + (good ? ' good' : ''); t.textContent = msg;
@@ -1353,10 +1444,11 @@ function toast(msg, good) {
 // ---------- старт ----------
 (async () => {
   try {
-    store = await createStore({ perTab: !IS_GM_PAGE });
+    store = await createStore({ perTab: !IS_GM_PAGE && !MOBILE });
     document.body.insertAdjacentHTML('beforeend', `<div class="ver">v${VERSION}</div>`);
     if (store.mode === 'demo') document.body.insertAdjacentHTML('beforeend',
       `<div class="demo-flag">ДЕМО-РЕЖИМ · без Firebase · ${IS_GM_PAGE ? '<a href="./">екран гравця</a>' : '<a href="?gm">пульт ведучого</a>'}</div>`);
+    if (MOBILE) document.documentElement.dataset.tab = UI.tab;
     if (IS_GM_PAGE) { await bootGM(); closeIntro(true); } else { await bootPlayer(); introReady(); }
   } catch (err) {
     console.error(err);

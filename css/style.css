@@ -462,3 +462,141 @@ h4::after { content: '///'; color: var(--orange); letter-spacing: 0; font-weight
 .chipc.robot.xt2 { border-color: #e0b04a; color: #f0c870; }
 .xt2-btn { position: absolute; right: 16px; bottom: 64px; z-index: 5; border-color: #e0b04a; color: #f0c870; background: rgba(10,12,14,.8); }
 .xt2-modal { border-color: #e0b04a; } .xt2-modal small { color: #e0b04a; }
+
+/* ================= ТЕЛЕФОН: режим застосунку ================= */
+html.mobile, html.mobile body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html.mobile body { font-size: 14px; -webkit-tap-highlight-color: transparent; }
+html.mobile .tabbar, html.mobile .chatpane { display: flex; }
+.tabbar, .chatpane { display: none; }
+html.mobile .player.screen { height: 100dvh; min-height: 0; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); }
+
+/* шапка в один рядок */
+html.mobile .player .topbar { flex-wrap: nowrap; gap: 8px; padding: 6px 10px; min-height: 46px; order: 0; }
+html.mobile .player .topbar .brand, html.mobile .player #who, html.mobile .player #voiceBtn,
+html.mobile .player #chatBtn, html.mobile .player #secretBtn, html.mobile .player .roundno,
+html.mobile .player .o2 .bar, html.mobile .player .threat .lbl, html.mobile .player .timer .lbl { display: none; }
+html.mobile .player .o2 .lbl { font-size: 9px; }
+html.mobile .player .o2 .val { font-size: 14px; }
+html.mobile .player .threat .bar i { width: 5px; height: 12px; }
+html.mobile .player .threat b { font-size: 12px; }
+html.mobile .player .turn { padding: 2px 8px; }
+html.mobile .player .turn small { display: none; }
+html.mobile .player .turn b { font-size: 13px; }
+html.mobile .player .timer b { font-size: 14px; }
+html.mobile .player .topbar .ring { width: 22px; height: 22px; margin-left: auto; }
+html.mobile .player .topbar .spacer { display: block; flex: 1; }
+
+/* вкладки */
+html.mobile .player .layout { display: block; flex: 1; min-height: 0; position: relative; order: 1; }
+html.mobile .player [data-pane] { display: none; }
+html.mobile[data-tab="loc"] .player [data-pane="loc"],
+html.mobile[data-tab="sheet"] .player [data-pane="sheet"],
+html.mobile[data-tab="log"] .player [data-pane="log"],
+html.mobile[data-tab="greta"] .player [data-pane="greta"] { display: flex; flex-direction: column; position: absolute; inset: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+html.mobile[data-tab="dice"] .player .layout { display: none; }
+html.mobile[data-tab="dice"] .player [data-pane="dice"] { display: flex; flex: 1; min-height: 0; order: 1; overflow-y: auto; }
+html:not([data-tab]).mobile .player [data-pane="loc"] { display: flex; flex-direction: column; position: absolute; inset: 0; }
+
+html.mobile .tabbar { order: 3; display: grid; grid-template-columns: repeat(5, 1fr); background: #0e1115; border-top: 1px solid var(--orange-dim);
+  padding-bottom: env(safe-area-inset-bottom); }
+html.mobile .tabbar button { position: relative; background: none; border: 0; padding: 8px 2px 7px; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--muted); min-height: 56px; }
+html.mobile .tabbar i { font-style: normal; font-size: 18px; line-height: 1; }
+html.mobile .tabbar span { font-family: var(--head); font-size: 10px; letter-spacing: .12em; }
+html.mobile .tabbar button.on { color: var(--orange); }
+html.mobile .tabbar button.on::before { content: ''; position: absolute; top: -1px; left: 22%; right: 22%; height: 2px; background: var(--orange); }
+html.mobile .tabbar b { position: absolute; top: 4px; left: 56%; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--danger); color: #fff; font: 700 10px/17px var(--mono); }
+
+/* локація на весь екран */
+html.mobile .player .mapcol { padding: 6px; }
+html.mobile .player .viewtabs { margin-bottom: 6px; }
+html.mobile .player .viewtabs .tog { flex: 1; min-height: 38px; }
+html.mobile .player .loc { aspect-ratio: auto; flex: 1; min-height: 0; clip-path: none; }
+html.mobile .player .loc > img:not(.figure) { object-fit: cover; }
+html.mobile .player .loc-label { top: 10px; left: 10px; padding: 6px 10px; }
+html.mobile .player .objective { top: 66px; left: 10px; max-width: 76%; }
+html.mobile .player .loc-here { left: 10px; bottom: 10px; max-width: 60%; }
+html.mobile .player .loc-map { right: 10px; bottom: 10px; min-height: 40px; }
+html.mobile .player .xt2-btn { right: 10px; bottom: 60px; min-height: 40px; }
+html.mobile .player .mapcol:has(.map) { overflow: auto; }
+html.mobile .player .map { width: 240%; max-width: none; flex: none; }
+html.mobile .player .map-hint { position: sticky; left: 0; }
+
+/* лист */
+html.mobile .player .sheet { width: auto; max-height: none; border: 0; padding: 12px 14px 24px; }
+html.mobile .player .sheet-head button { display: none; }
+html.mobile .player .stat { min-height: 62px; }
+html.mobile .player .stat b { font-size: 22px; }
+html.mobile .player .track .ghost.small { min-width: 40px; min-height: 36px; font-size: 16px; }
+html.mobile .player .chip { padding: 8px 10px; font-size: 13px; }
+html.mobile .player .sheet::before { content: 'Торкніться характеристики або спаски, щоб кинути перевірку'; display: block; color: var(--teal); font-size: 12px; margin-bottom: 8px; }
+
+/* кубики */
+html.mobile .player .tray { position: static; flex-direction: column; align-items: stretch; gap: 12px; padding: 14px; border: 0; }
+html.mobile .player .tray .check { width: 100%; }
+html.mobile .player .tray .mods { display: grid; grid-template-columns: 1fr 1fr; }
+html.mobile .player .tray .mods .tog, html.mobile .player .tray .danger, html.mobile .player .tray .primary.big { min-height: 48px; }
+html.mobile .player .tray .free { display: grid; grid-template-columns: repeat(4, 1fr); }
+html.mobile .player .tray .die { min-height: 52px; font-size: 16px; }
+html.mobile .player .tray .result { width: 100%; justify-content: center; min-height: 70px; border: 1px solid var(--line); padding: 10px; }
+html.mobile .player .tray .result b { font-size: 46px; }
+html.mobile .player .aprow { gap: 8px; }
+html.mobile .player .aprow .ghost.small { min-height: 40px; flex: 1; }
+html.mobile .player .aprow .endturn { width: 100%; min-height: 48px; margin: 4px 0 0; font-size: 15px; }
+
+/* журнал */
+html.mobile .player .logcol { border: 0; padding: 8px 12px 16px; }
+html.mobile .player .log { max-height: none; }
+html.mobile .player .entry { font-size: 13px; }
+
+/* Ґрета */
+html.mobile .chatpane { flex-direction: column; padding: 10px 12px; gap: 8px; }
+html.mobile .chat-head { display: flex; align-items: center; gap: 10px; padding-bottom: 8px; border-bottom: 1px solid var(--accent-dim); }
+html.mobile .chat-head .ring { width: 30px; height: 30px; }
+html.mobile .chat-head small { display: block; font-family: var(--head); letter-spacing: .18em; font-size: 10px; color: var(--accent); }
+html.mobile .chat-head b { font-family: var(--head); font-size: 18px; letter-spacing: .1em; }
+html.mobile .chatpane .msgs { flex: 1; max-height: none; min-height: 0; }
+html.mobile .chatpane .msg { font-size: 15px; max-width: 88%; }
+html.mobile .chat-input { display: flex; gap: 8px; }
+html.mobile .chat-input input { font-size: 16px; min-height: 46px; }
+html.mobile .chat-input .primary { min-width: 52px; font-size: 18px; }
+
+/* нижня панель кидка */
+.bottom-sheet { position: fixed; z-index: 66; left: 0; right: 0; bottom: 0; max-height: 86dvh; overflow-y: auto; background: var(--panel);
+  border-top: 1px solid var(--orange); padding: 10px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 12px;
+  animation: sheetUp .22s ease; }
+@keyframes sheetUp { from { transform: translateY(40%); opacity: .4; } }
+.bottom-sheet .grab { width: 44px; height: 4px; border-radius: 2px; background: var(--line); align-self: center; }
+.bottom-sheet small { font-family: var(--head); letter-spacing: .2em; color: var(--teal); font-size: 11px; }
+.bottom-sheet h2 { margin: 0; font-family: var(--head); font-weight: 500; font-size: 24px; letter-spacing: .06em; text-transform: uppercase; }
+.bottom-sheet h2 .tgt { color: var(--orange); font-family: var(--mono); }
+.bottom-sheet .mods { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.bottom-sheet .tog, .bottom-sheet .wide { min-height: 48px; width: 100%; }
+.bottom-sheet .chip { padding: 8px 10px; font-size: 13px; }
+.bottom-sheet .result { display: flex; align-items: center; gap: 12px; justify-content: center; min-height: 10px; }
+.bottom-sheet .result b { font-size: 48px; font-family: var(--mono); }
+.bottom-sheet .result span { font-family: var(--head); letter-spacing: .1em; font-size: 16px; }
+.bottom-sheet .result small { display: block; color: var(--muted); letter-spacing: 0; font-family: var(--font); }
+.bottom-sheet .result.ok b, .bottom-sheet .result.ok span { color: var(--ok); }
+.bottom-sheet .result.fail b, .bottom-sheet .result.fail span { color: var(--danger); }
+
+/* ВАШ ХІД */
+.turnflash { position: fixed; inset: 0; z-index: 85; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: radial-gradient(ellipse at center, rgba(255,107,26,.92), rgba(120,40,8,.96)); color: #120a05; animation: fadein .25s ease; }
+.turnflash small { font-family: var(--head); letter-spacing: .3em; }
+.turnflash b { font-family: var(--head); font-size: 54px; letter-spacing: .08em; }
+.turnflash span { font-family: var(--mono); }
+
+/* інше */
+html.mobile #greta { top: calc(52px + env(safe-area-inset-top)); }
+html.mobile .ver { display: none; }
+html.mobile .demo-flag { bottom: auto; top: 0; }
+html.mobile .toast { bottom: calc(76px + env(safe-area-inset-bottom)); width: max-content; max-width: 90vw; text-align: center; }
+.rejoin { display: inline-block; margin-top: 6px; padding: 6px 10px; border: 1px dashed var(--orange); color: var(--orange); font-family: var(--head); font-size: 11px; letter-spacing: .1em; cursor: pointer; }
+.crew-card.taken { opacity: .75; }
+html.mobile .join { padding: 14px; height: 100dvh; overflow-y: auto; }
+html.mobile .cards { grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 14px 0; }
+html.mobile .cc-name { font-size: 20px; }
+html.mobile .join-foot { flex-direction: column; position: sticky; bottom: 0; background: var(--bg); padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+html.mobile .join-foot .primary { min-height: 52px; }
+html.mobile .center-msg.cover { height: 100dvh; }
+html.mobile .player .mapcol:has(.map) .viewtabs { position: sticky; left: 0; width: calc(100vw - 12px); z-index: 4; }

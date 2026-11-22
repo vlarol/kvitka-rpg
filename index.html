@@ -2,12 +2,20 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d10">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="STS-187">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="assets/icon-180.png">
+  <link rel="icon" href="assets/icon-192.png">
   <title>STS-187 · Квітка Розуму RPG</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&family=Oswald:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=202611221105">
+  <link rel="stylesheet" href="css/style.css?v=202611221128">
 </head>
 <body>
   <div id="intro" class="intro">
@@ -15,6 +23,7 @@
     <div class="intro-ui" id="introMsg"><div class="ring mode-assist"><span></span></div><span>ВСТАНОВЛЮЮ ЗВ'ЯЗОК З STS-187…</span></div>
   </div>
   <div id="app"></div>
-  <script type="module" src="js/app.js?v=202611221105"></script>
+  <script>if ('serviceWorker' in navigator && !/[?&#]gm\b/.test(location.search + location.hash)) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
+  <script type="module" src="js/app.js?v=202611221128"></script>
 </body>
 </html>
