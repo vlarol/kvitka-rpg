@@ -1,11 +1,11 @@
-import { createStore } from './store.js?v=202611221018';
+import { createStore } from './store.js?v=202611221051';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars
-} from './data.js?v=202611221018';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221018';
+} from './data.js?v=202611221051';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221051';
 
-const VERSION = '202611221018';
+const VERSION = '202611221051';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -322,6 +322,18 @@ function currentRoom() {
   return id && S.chars[id] ? S.chars[id].loc : 'A1';
 }
 
+function figuresHTML(list) {
+  const figs = list.filter(c => c.figure);
+  if (!figs.length) return '';
+  const n = figs.length;
+  const span = Math.min(70, 18 * n);                 // ширина «сцени» у відсотках
+  return `<div class="figures">${figs.map((c, i) => {
+    const x = 50 + (n === 1 ? 0 : (i / (n - 1) - 0.5) * span);
+    const active = c.id === turnId();
+    return `<img class="figure ${active ? 'active' : ''}" src="assets/figures/${c.figure}" alt="${esc(c.name)}" title="${esc(c.name)}" style="left:${x}%;--d:${i * 0.12}s">`;
+  }).join('')}</div>`;
+}
+
 function locHTML(rid) {
   const r = ROOM_BY_ID[rid] || ROOM_BY_ID.A1;
   const here = CHARACTERS.filter(c => S.chars[c.id] && S.chars[c.id].loc === r.id && (S.seats[c.id] || IS_GM_PAGE));
@@ -330,6 +342,7 @@ function locHTML(rid) {
     ${img ? `<img src="${img}" alt="${esc(r.name)}">` : `<div class="noimg">${r.outside ? 'ЗОВНІ. ВАКУУМ.' : 'НЕМАЄ ЗОБРАЖЕННЯ З КАМЕРИ'}</div>`}
     <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
     ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
+    ${figuresHTML(here)}
     ${objectiveHTML(r.id)}
     <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}</div>
     ${IS_GM_PAGE ? `<select class="loc-pick" data-gmview="1" title="Дивитися іншу локацію">${ROOMS.map(x => `<option value="${x.id}" ${x.id === r.id ? 'selected' : ''}>${x.id} · ${esc(x.name)}</option>`).join('')}</select>` : ''}

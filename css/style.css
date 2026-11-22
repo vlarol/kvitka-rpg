@@ -439,3 +439,12 @@ h4::after { content: '///'; color: var(--orange); letter-spacing: 0; font-weight
 @media (max-width: 760px) { .threat .lbl { display: none; } .objective { max-width: 70%; top: 64px; } }
 .ai-status { font-size: 12px; color: var(--accent); margin: 4px 0; white-space: pre-wrap; }
 .inbox .ai { border-left-color: var(--accent); color: #cfeef8; }
+
+/* персонажі в локації */
+.figures { position: absolute; inset: 0; z-index: 1; pointer-events: none; }
+.figure { position: absolute; bottom: 2%; height: 86%; width: auto; transform: translateX(-50%);
+  filter: brightness(.82) contrast(1.05) drop-shadow(0 18px 18px rgba(0,0,0,.65));
+  animation: figIn .7s ease both; animation-delay: var(--d, 0s); }
+.figure.active { filter: brightness(.95) contrast(1.05) drop-shadow(0 18px 18px rgba(0,0,0,.65)) drop-shadow(0 0 10px rgba(255,107,26,.35)); }
+@keyframes figIn { from { opacity: 0; transform: translateX(-50%) translateY(3%); } }
+.loc-here { z-index: 3; }
