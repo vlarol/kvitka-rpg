@@ -674,3 +674,7 @@ html.mobile .figures { transform: translateZ(0); }
 html.mobile .player .loc-eye { right: 10px; top: 62px; min-height: 36px; }
 html.mobile .player .loc:has(.loc-eye) .loc-next { top: 106px; }
 @media (orientation: portrait) and (max-width: 900px) { .intro-ui { bottom: 15vh; } }
+@media (orientation: portrait) and (max-width: 900px) {
+  .join::before { background-image: url('../assets/cover-m.jpg'); }
+  .center-msg.cover { background: linear-gradient(rgba(11,13,16,.35), rgba(11,13,16,.85)), url('../assets/cover-m.jpg') center / cover no-repeat; }
+}
