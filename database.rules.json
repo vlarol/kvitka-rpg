@@ -55,6 +55,20 @@
           ".read": "auth != null && root.child('game/seats').child($c).child('uid').val() === auth.uid",
           ".write": "auth != null && root.child('game/seats').child($c).child('uid').val() === auth.uid"
         }
+      },
+      "goals": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      },
+      "chat": {
+        ".read": "root.child('admins').child(auth.uid).exists()",
+        ".write": "root.child('admins').child(auth.uid).exists()",
+        "$c": {
+          ".read": "auth != null && root.child('game/seats').child($c).child('uid').val() === auth.uid",
+          "$m": {
+            ".write": "auth != null && !data.exists() && root.child('game/seats').child($c).child('uid').val() === auth.uid && newData.child('from').val() === 'p'"
+          }
+        }
       }
     }
   }

@@ -1,10 +1,11 @@
-import { createStore } from './store.js?v=202611212108';
+import { createStore } from './store.js?v=202611220029';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars
-} from './data.js?v=202611212108';
+} from './data.js?v=202611220029';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611220029';
 
-const VERSION = '202611212108';
+const VERSION = '202611220029';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -16,11 +17,11 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const IS_GM_PAGE = /[?&#]gm\b/.test(location.search + location.hash);
 
 let store;
-const S = { requests: {}, seats: {}, chars: {}, state: null, log: {}, secret: null, secrets: {}, gm: {}, isAdmin: false };
+const S = { goals: {}, chat: {}, requests: {}, seats: {}, chars: {}, state: null, log: {}, secret: null, secrets: {}, gm: {}, isAdmin: false };
 const UI = {
   pick: null, sheetOpen: true, secretOpen: false, target: null, skill: null,
   adv: false, dis: false, lastRoll: null, panicPrompt: false, cutTs: null, dismissedCut: null,
-  gretaTs: null, voice: false, lastTurn: undefined, view: IS_GM_PAGE ? 'map' : 'loc', imgIdx: 0, mainKey: null, openSec: new Set(), gmSel: null, resetArm: false, gmLast: null
+  gretaTs: null, voice: false, lastTurn: undefined, view: IS_GM_PAGE ? 'map' : 'loc', imgIdx: 0, mainKey: null, openSec: new Set(), gmSel: null, resetArm: false, gmLast: null, tabId: Math.random().toString(36).slice(2, 10), advancing: false, chatOpen: null, chatSeen: {}
 };
 const subs = [];
 
@@ -57,11 +58,18 @@ function targetInfo(cid) {
 async function doCheck() {
   const id = myCharId(); if (!id) return;
   const t = targetInfo(id); if (!t) return;
-  const twice = UI.adv !== UI.dis;
+  if (myTurnActive() && !(await spendAP(1, 'Перевірка'))) return;
+  const buff = (S.chars[id] || {}).buff;
+  let advB = UI.adv, bonus = 0, used = false;
+  if (buff === 'train' && UI.target[0] === 'stat' && ['str', 'spd', 'cmb'].includes(UI.target[1])) { advB = true; used = true; }
+  if (buff === 'study' && t.sk) { bonus = 10; used = true; }
+  if (used) await store.update(`game/chars/${id}`, { buff: null });
+  t.total += bonus;
+  const twice = advB !== UI.dis;
   const rolls = twice ? [d100(), d100()] : [d100()];
   const ranks = rolls.map(r => evalCheck(r, t.total));
   let i = 0;
-  if (twice) i = UI.adv ? (ranks[0] >= ranks[1] ? 0 : 1) : (ranks[0] <= ranks[1] ? 0 : 1);
+  if (twice) i = advB ? (ranks[0] >= ranks[1] ? 0 : 1) : (ranks[0] <= ranks[1] ? 0 : 1);
   const rank = ranks[i];
   const st = S.chars[id];
   let extra = '';
@@ -71,7 +79,7 @@ async function doCheck() {
     extra = ` · +1 Стрес (${ns})`;
   }
   if (rank === 0) { UI.panicPrompt = true; extra += ' · КИДАЙ ПАНІКУ'; }
-  const mod = twice ? (UI.adv ? ' [+]' : ' [−]') : '';
+  const mod = (twice ? (advB ? ' [+]' : ' [−]') : '') + (bonus ? ' +10 навчання' : '');
   const rollsTxt = rolls.map(pad2).join(' / ');
   UI.lastRoll = { big: pad2(rolls[i]), label: RANK_LABEL[rank], rank, sub: `${t.label}${t.sk ? ' + ' + t.sk[0] : ''} = ${t.total}${mod}` };
   await logPush(`${t.label}${t.sk ? ' + ' + t.sk[0] : ''} (${t.total})${mod}: ${rollsTxt} → ${RANK_LABEL[rank]}${extra}`, rank === 0 ? 'bad' : rank === 3 ? 'good' : 'roll', id);
@@ -181,6 +189,7 @@ function mapHTML(clickable) {
 // ---------- доступ ----------
 function canEnter(cid, rid) {
   const r = ROOM_BY_ID[rid]; if (!r) return false;
+  if (isLocked(rid)) return false;
   const st = S.chars[cid] || {};
   if (r.needFrom && st.loc !== r.needFrom && st.loc !== rid) return false;
   if (r.access === 'all') return true;
@@ -192,8 +201,8 @@ function accessList(cid) {
   const keys = Object.keys(st.keys || {});
   return { own, keys };
 }
-function gmNote(text) {
-  return store.push('game/gm/inbox', { uid: store.uid, charId: myCharId(), text });
+function gmNote(text, viol = false) {
+  return store.push('game/gm/inbox', { uid: store.uid, charId: myCharId(), text, viol: viol ? 1 : 0, round: ST().round || 0 });
 }
 
 function lockModal(rid) {
@@ -202,7 +211,8 @@ function lockModal(rid) {
   const force = bestSkill(c, ['Атлетика', 'Рукопашний бій']);
   const needWay = r.needFrom && S.chars[id].loc !== r.needFrom;
   $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModal"></div><div class="modal">
-    <small>ДОСТУП ЗАБОРОНЕНО</small><h2>${esc(r.id)} · ${esc(r.name)}</h2>
+    <small>${isLocked(rid) ? 'ЛОКДАУН ҐРЕТИ' : 'ДОСТУП ЗАБОРОНЕНО'}</small><h2>${esc(r.id)} · ${esc(r.name)}</h2>
+    ${isLocked(rid) ? '<p>Ґрета заблокувала цю кімнату для всього екіпажу. Ключі не допоможуть. Злом — з перешкодою.</p>' : ''}
     ${needWay ? `<p>Туди можна потрапити лише через ${esc(ROOM_BY_ID[r.needFrom].id + ' · ' + ROOM_BY_ID[r.needFrom].name)}.</p>` : `
     <p class="muted">${r.hard ? 'Посилений замок: злом з перешкодою.' : 'Звичайний електронний замок.'} ${r.id === 'B1' ? '' : 'Камера Ґрети бачить двері.'}</p>
     <button class="ghost opt" data-act="hack" data-room="${rid}" data-mode="tech"><b>ЗЛАМАТИ ЗАМОК</b><span>Інтелект ${c.stats.int}${tech ? ' + ' + esc(tech[0]) + ' ' + tech[1] : ''} = ${c.stats.int + (tech ? tech[1] : 0)}${r.hard ? ' [−]' : ''}</span></button>
@@ -225,6 +235,76 @@ function secretModal() {
 }
 function bestSkill(c, names) {
   return c.skills.filter(([n]) => names.includes(n)).sort((a, b) => b[1] - a[1])[0] || null;
+}
+
+// ---------- КАМПАНІЯ: кола, дії, загроза ----------
+const ST = () => S.state || {};
+const inPlay = () => ST().phase === 'play';
+function apLeft(cid) { const st = S.chars[cid] || {}; return st.ap ?? CAMPAIGN.apPerTurn; }
+function myTurnActive() { return inPlay() && turnId() && turnId() === myCharId(); }
+// Повертає true, якщо дію можна виконати (і списує дії). Поза кампанією — без обмежень.
+async function spendAP(n, what) {
+  if (IS_GM_PAGE || !inPlay() || !turnId()) return true;
+  const id = myCharId();
+  if (turnId() !== id) { toast(`Зараз не ваш хід. ${what || 'Ця дія'} — лише у свій хід.`); return false; }
+  const left = apLeft(id);
+  if (left < n) { toast('Дії на цей хід закінчились. Натисніть «ЗАВЕРШИТИ ХІД».'); return false; }
+  await store.update(`game/chars/${id}`, { ap: left - n });
+  return true;
+}
+function stageLocked(rid) {
+  if (!ST().phase || ST().phase === 'setup') return false;
+  const t = ST().threat || 0;
+  for (let lvl = 1; lvl <= t; lvl++) { const sg = THREAT_STAGES[lvl]; if (sg && sg.locks && sg.locks.includes(rid)) return true; }
+  return false;
+}
+function isLocked(rid) {
+  const st = ST();
+  return stageLocked(rid) || !!((st.locks && st.locks[rid]) || (st.tempLocks && st.tempLocks[rid]));
+}
+function threatLevel() { return ST().threat || 0; }
+function threatHTML() {
+  if (!ST().phase || ST().phase === 'setup') return '';
+  const t = threatLevel(); const max = CAMPAIGN.threatMax;
+  let bar = '';
+  for (let i = 1; i <= max; i++) bar += `<i class="${i <= t ? 'on' : ''}"></i>`;
+  return `<div class="threat ${t >= 7 ? 'crit' : ''}" title="Контроль Ґрети"><span class="lbl">КОНТРОЛЬ ҐРЕТИ</span><span class="bar">${bar}</span><b>${t}/${max}</b></div>
+    <div class="roundno"><span class="lbl">КОЛО</span><b>${ST().round || 1}</b></div>`;
+}
+function timerLeft() {
+  const st = ST();
+  if (!inPlay() || !st.turnStart || !turnId()) return null;
+  const now = st.paused ? st.pausedAt : Date.now();
+  return Math.max(0, Math.ceil((st.turnSec || CAMPAIGN.turnSec) - (now - st.turnStart) / 1000));
+}
+function fmtSec(t) { return `${Math.floor(t / 60)}:${pad2(t % 60)}`; }
+function availableObjective(rid) {
+  const o = OBJECTIVES.find(x => x.room === rid);
+  if (!o) return null;
+  const g = S.goals || {};
+  if ((g[o.id] || 0) >= o.need) return { o, done: true };
+  if (o.final && !OBJECTIVES.filter(x => !x.final).every(x => (g[x.id] || 0) >= x.need)) return { o, locked: true };
+  return { o };
+}
+function objectiveHTML(rid) {
+  if (IS_GM_PAGE || !ST().phase || ST().phase === 'setup') return '';
+  const a = availableObjective(rid); if (!a) return '';
+  const g = (S.goals || {})[a.o.id] || 0;
+  if (a.done) return `<div class="objective done"><small>ЦІЛЬ ЕКІПАЖУ · ВИКОНАНО</small><b>${esc(a.o.title)}</b></div>`;
+  if (a.locked) return `<div class="objective"><small>ЦІЛЬ ЕКІПАЖУ</small><b>${esc(a.o.title)}</b><span>Спершу виконайте три інші цілі.</span></div>`;
+  return `<div class="objective"><small>ЦІЛЬ ЕКІПАЖУ · ${g}/${a.o.need}</small><b>${esc(a.o.title)}</b><span>${esc(a.o.desc)}</span>
+    <button class="primary small" data-act="objective" data-o="${a.o.id}">СПРОБУВАТИ · 1 ДІЯ</button></div>`;
+}
+function endScreen() {
+  const ph = ST().phase; const el = $('#endScreen');
+  if (!el) return;
+  if (ph !== 'won' && ph !== 'lost') { el.innerHTML = ''; return; }
+  const won = ph === 'won';
+  el.innerHTML = `<div class="endscreen ${won ? 'won' : 'lost'}"><small>${won ? 'ЕКІПАЖ ПЕРЕМІГ' : 'ҐРЕТА ПЕРЕМОГЛА'}</small>
+    <h1>${won ? 'РУЧНЕ КЕРУВАННЯ' : 'ПОВНИЙ КОНТРОЛЬ'}</h1>
+    <p>${esc(ST().endText || (won ? 'Ядро Ґрети вимкнено. STS-187 знову ваш. Надовго?' : THREAT_STAGES[10].text))}</p>
+    <div class="ring mode-${won ? 'evade' : 'control'}"><span></span></div>
+    ${IS_GM_PAGE ? '<button class="ghost" data-act="hideEnd">СХОВАТИ</button>' : ''}</div>`;
 }
 
 function turnId() { return (S.state && S.state.turn && S.seats[S.state.turn]) ? S.state.turn : null; }
@@ -250,6 +330,7 @@ function locHTML(rid) {
     ${img ? `<img src="${img}" alt="${esc(r.name)}">` : `<div class="noimg">${r.outside ? 'ЗОВНІ. ВАКУУМ.' : 'НЕМАЄ ЗОБРАЖЕННЯ З КАМЕРИ'}</div>`}
     <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
     ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
+    ${objectiveHTML(r.id)}
     <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}</div>
     ${IS_GM_PAGE ? `<select class="loc-pick" data-gmview="1" title="Дивитися іншу локацію">${ROOMS.map(x => `<option value="${x.id}" ${x.id === r.id ? 'selected' : ''}>${x.id} · ${esc(x.name)}</option>`).join('')}</select>` : ''}
     <button class="loc-map primary" data-act="view" data-v="map">МАПА КОРАБЛЯ</button>
@@ -261,7 +342,7 @@ function renderMain(force) {
   const rid = currentRoom();
   const key = UI.view === 'map'
     ? 'map|' + JSON.stringify(S.chars) + JSON.stringify(Object.keys(S.seats || {})) + UI.gmSel
-    : `loc|${rid}|${UI.imgIdx}|${turnId()}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
+    : `loc|${rid}|${UI.imgIdx}|${turnId()}|${JSON.stringify(S.goals || {})}|${ST().phase}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
   if (!force && key === UI.mainKey) return;
   UI.mainKey = key;
   const tabs = `<div class="viewtabs"><button class="tog ${UI.view === 'loc' ? 'on' : ''}" data-act="view" data-v="loc">ЛОКАЦІЯ</button><button class="tog ${UI.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">МАПА</button></div>`;
@@ -330,15 +411,18 @@ function renderPlayer() {
   if (!id) return renderJoin();
   if (!$('#playerRoot')) {
     $('#app').innerHTML = `<div id="playerRoot" class="screen player">
-      <header class="topbar"><div class="brand">STS-187</div><div id="o2"></div><div class="spacer"></div><div id="turn"></div>
+      <header class="topbar"><div class="brand">STS-187</div><div id="o2"></div><div id="threat" class="threatwrap"></div><div class="spacer"></div><div id="turn"></div><div id="timer" class="timer"></div>
+        <button class="ghost small greta-btn" data-act="chatOpen" id="chatBtn">НАПИСАТИ ҐРЕТІ</button>
         <button class="ghost small secret-btn" data-act="secretModal" id="secretBtn">ТАЄМНА ЦІЛЬ</button>
         <button class="ghost small" data-act="voice" id="voiceBtn"></button><div id="who" class="who"></div><div id="ring"></div></header>
       <div id="greta"></div>
       <main class="layout"><section class="mapcol" id="map"></section>
         <aside class="sheet" id="sheet"></aside><aside class="logcol"><h4>ЖУРНАЛ</h4><div id="log" class="log"></div></aside></main>
-      <footer class="tray" id="tray"></footer><div id="cut"></div><div id="modal"></div></div>`;
+      <footer class="tray" id="tray"></footer><div id="cut"></div><div id="modal"></div><div id="endScreen"></div></div>`;
   }
   const c = CHAR_BY_ID[id];
+  $('#threat').innerHTML = threatHTML();
+  endScreen(); tickTimer();
   $('#o2').innerHTML = o2HTML();
   $('#ring').innerHTML = ringHTML(S.state.mode);
   $('#who').innerHTML = `<span style="color:${c.color}">${esc(c.name)}</span> · ${esc(S.seats[id].name)}`;
@@ -421,7 +505,16 @@ function renderTray() {
   const t = targetInfo(id);
   const lr = UI.lastRoll;
   const rankCls = lr ? (lr.rank === 3 || lr.rank === 2 ? 'ok' : lr.rank === -1 ? '' : 'fail') : '';
-  el.innerHTML = `
+  const apRow = myTurnActive() ? (() => {
+    const left = apLeft(id); let pips = '';
+    for (let i = 0; i < CAMPAIGN.apPerTurn; i++) pips += `<i class="${i < left ? 'on' : ''}"></i>`;
+    const buff = (S.chars[id] || {}).buff;
+    return `<div class="aprow"><span class="lbl">ДІЇ</span><span class="pips">${pips}</span>
+      ${left === CAMPAIGN.apPerTurn ? LONG_ACTIONS.map(a => `<button class="ghost small" data-act="longAction" data-a="${a.id}" title="${esc(a.desc)}">${a.title}</button>`).join('') : ''}
+      ${buff ? `<span class="buff">${buff === 'train' ? 'ПЕРЕВАГА НА ФІЗИЧНУ ПЕРЕВІРКУ' : '+10 ДО НАСТУПНОЇ НАВИЧКИ'}</span>` : ''}
+      <button class="primary small endturn" data-act="endTurn">ЗАВЕРШИТИ ХІД</button></div>`;
+  })() : '';
+  el.innerHTML = apRow + `
     <div class="check">${t ? `<small>ПЕРЕВІРКА</small><b>${esc(t.label)} ${t.base}${t.sk ? ` + ${esc(t.sk[0])} ${t.sk[1]}` : ''} = <span class="tgt">${t.total}</span></b><small>треба викинути менше</small>` : '<small>ПЕРЕВІРКА</small><b class="muted">Оберіть характеристику або спаску в листі</b>'}</div>
     <div class="mods"><button class="tog ${UI.adv ? 'on' : ''}" data-act="adv">ПЕРЕВАГА +</button><button class="tog ${UI.dis ? 'on' : ''}" data-act="dis">ПЕРЕШКОДА −</button></div>
     <button class="primary big" data-act="check" ${t ? '' : 'disabled'}>КИНУТИ d100</button>
@@ -455,28 +548,69 @@ async function bootPlayer() {
       });
     }
     if (!$('#playerRoot') || !id) $('#app').innerHTML = '';
+    watchMyChat();
     renderPlayer();
   }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#playerRoot')) { renderMain(); renderSheet(); } }));
   subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#log')) $('#log').innerHTML = logHTML(S.log); }, 80));
+  subs.push(store.on('game/goals', v => { S.goals = v || {}; if ($('#playerRoot')) renderMain(); }));
+  setInterval(tickTimer, 1000);
+}
+let chatOff = null;
+function watchMyChat() {
+  const id = myCharId(); if (!id || S._chatFor === id) return;
+  S._chatFor = id; if (chatOff) chatOff();
+  chatOff = store.on(`game/chat/${id}`, v => {
+    const prev = Object.keys(S.chat[id] || {}).length;
+    S.chat[id] = v || {};
+    const list = Object.values(S.chat[id]);
+    if (S._chatLoaded && list.length > prev && list[list.length - 1].from === 'g') {
+      if (UI.chatOpen !== id) { toast('Ґрета відповіла вам.', true); $('#chatBtn') && $('#chatBtn').classList.add('new'); }
+    }
+    S._chatLoaded = true;
+    if (UI.chatOpen === id) chatModal(id);
+  });
+}
+function chatHTML(cid) {
+  const list = Object.entries(S.chat[cid] || {}).sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  return list.map(([, m]) => `<div class="msg ${m.from === 'g' ? 'g' : 'p'}">${m.from === 'g' ? '<small>ҐРЕТА</small>' : ''}${esc(m.text)}</div>`).join('') || '<div class="muted">Ґрета слухає.</div>';
+}
+function chatModal(cid) {
+  const keep = $('#chatText') ? $('#chatText').value : '';
+  $('#modal').innerHTML = `<div class="modal-bg" data-act="chatClose"></div><div class="modal chat-modal">
+    <small>КАНАЛ ЗВ'ЯЗКУ · ПРИВАТНО</small><h2>${ringHTML(ST().mode)} ҐРЕТА</h2>
+    <div class="msgs" id="msgs">${chatHTML(cid)}</div>
+    <div class="row"><input id="chatText" maxlength="400" placeholder="Напишіть Ґреті…" value="${esc(keep)}"><button class="primary small" data-act="chatSend">НАДІСЛАТИ</button></div>
+    <button class="ghost small" data-act="chatClose">ЗАКРИТИ</button></div>`;
+  const m = $('#msgs'); if (m) m.scrollTop = m.scrollHeight;
+  const i = $('#chatText'); if (i) i.focus();
+}
+function tickTimer() {
+  const el = $('#timer'); if (!el) return;
+  const t = timerLeft();
+  if (t === null) { el.innerHTML = ''; return; }
+  el.innerHTML = `<span class="lbl">${ST().paused ? 'ПАУЗА' : 'ЧАС ХОДУ'}</span><b class="${t <= 30 ? 'hot' : ''}">${fmtSec(t)}</b>`;
 }
 
 // ---------- ВЕДУЧИЙ ----------
 function renderGM() {
   if (!$('#gmRoot')) {
     $('#app').innerHTML = `<div id="gmRoot" class="screen gm">
-      <header class="topbar"><div class="brand">WARDEN // GRETA CORE</div><div id="o2"></div>
+      <header class="topbar"><div class="brand">WARDEN</div><div id="o2"></div>
         <div class="o2ctl"><button class="ghost small" data-act="o2" data-d="-30">−30</button><button class="ghost small" data-act="o2" data-d="30">+30</button><button class="ghost small" data-act="o2set">6:00</button></div>
-        <div class="spacer"></div><div id="turn"></div>
+        <div id="threat" class="threatwrap"></div><div class="spacer"></div><div id="turn"></div><div id="timer" class="timer"></div>
         <div class="o2ctl"><button class="primary small" data-act="nextTurn">НАСТУПНИЙ ХІД ▸</button><button class="ghost small" data-act="freeTurn">ВІЛЬНО</button></div>
         <div id="modes" class="modes"></div><div id="ring"></div></header>
       <div id="greta"></div>
       <main class="layout gm-layout"><aside class="crewcol" id="crew"></aside><section class="mapcol" id="map"></section>
-        <aside class="ctlcol" id="ctl"></aside></main></div>`;
+        <aside class="ctlcol" id="ctl"></aside></main><div id="endScreen"></div></div>`;
   }
   $('#o2').innerHTML = o2HTML();
   const mode = S.state ? S.state.mode : 'assist';
   $('#ring').innerHTML = ringHTML(mode);
+  $('#threat').innerHTML = threatHTML();
+  if (!UI.endHidden) endScreen();
+  tickTimer();
   renderTurn();
   $('#modes').innerHTML = Object.entries(GRETA_MODES).map(([k, l]) => `<button class="tog ${mode === k ? 'on' : ''}" data-act="mode" data-m="${k}">${l}</button>`).join('');
   renderMain();
@@ -513,7 +647,7 @@ function renderGMControls() {
   const keepOpen = el.querySelector('#gretaText') ? el.querySelector('#gretaText').value : '';
   const reqs = Object.entries(S.requests || {}).filter(([, r]) => r && r.status === 'pending');
   const inbox = Object.entries((S.gm && S.gm.inbox) || {}).sort((a, b) => (a[0] < b[0] ? 1 : -1)).slice(0, 8);
-  el.innerHTML = `
+  el.innerHTML = campaignPanelHTML() + gmChatHTML() + `
     ${reqs.length ? `<h4>ЗАПИТИ ДО ҐРЕТИ</h4>${reqs.map(([cid, r]) => `<div class="req"><b style="color:${CHAR_BY_ID[cid].color}">${esc(CHAR_BY_ID[cid].name)}</b> хоче в ${esc(r.room)} · ${esc((ROOM_BY_ID[r.room] || {}).name || '')}
       <div class="row"><button class="primary xs" data-act="grant" data-id="${cid}">ДОЗВОЛИТИ</button><button class="danger xs" data-act="deny" data-id="${cid}">ВІДМОВИТИ</button></div></div>`).join('')}` : ''}
     <h4>ДОСТУП: СПРОБИ ЗЛОМУ ${inbox.length ? '<button class="ghost xs" data-act="clearInbox">очистити</button>' : ''}</h4>
@@ -536,6 +670,125 @@ function renderGMControls() {
     <h4>ЖУРНАЛ</h4><div class="log">${logHTML(S.log)}</div>`;
 }
 
+function campaignPanelHTML() {
+  const st = ST(); const ph = st.phase || 'setup'; const g = S.goals || {};
+  const engineHere = st.engine === UI.tabId;
+  const prop = st.proposal;
+  return `<h4>КАМПАНІЯ · ${esc(CAMPAIGN.title.toUpperCase())}</h4>
+    ${ph === 'setup' ? `<button class="primary small" data-act="campStart">ПОЧАТИ КАМПАНІЮ (коло 1)</button>
+      <p class="muted small-note">Спершу хай усі гравці сядуть за стіл. Пульт має лишатися відкритим: він рахує ходи й кола.</p>` : `
+    <div class="camp-row"><span>КОЛО <b>${st.round || 1}</b></span><span>ЗАГРОЗА <b class="${threatLevel() >= 7 ? 'hot' : ''}">${threatLevel()}/${CAMPAIGN.threatMax}</b></span>
+      <button class="ghost xs" data-act="threat" data-d="-1">−</button><button class="ghost xs" data-act="threat" data-d="1">+</button>
+      <button class="ghost xs" data-act="deal" title="Угода з Ґретою: загроза −2, ціну назвіть самі">УГОДА −2</button></div>
+    <div class="camp-row"><button class="tog ${st.autopilot ? 'on' : ''}" data-act="autopilot">АВТОПІЛОТ ҐРЕТИ: ${st.autopilot ? 'ON' : 'OFF'}</button>
+      <select data-turnsec="1">${[60, 120, 180, 300].map(x => `<option value="${x}" ${(st.turnSec || CAMPAIGN.turnSec) === x ? 'selected' : ''}>хід ${x / 60} хв</option>`).join('')}</select>
+      <button class="ghost xs" data-act="${st.paused ? 'resume' : 'pause'}">${st.paused ? '▶ ДАЛІ' : '❚❚ ПАУЗА'}</button></div>
+    <div class="objs">${OBJECTIVES.map(o => `<div class="obj ${(g[o.id] || 0) >= o.need ? 'done' : ''}"><span>${o.room} · ${esc(o.title)}</span><b>${g[o.id] || 0}/${o.need}</b>
+      <button class="ghost xs" data-act="goal" data-o="${o.id}" data-d="-1">−</button><button class="ghost xs" data-act="goal" data-o="${o.id}" data-d="1">+</button></div>`).join('')}</div>
+    ${prop ? `<div class="proposal"><small>ҐРЕТА ПРОПОНУЄ (кінець кола ${prop.round})</small>${prop.lines.map(l => `<div>${esc(l)}</div>`).join('')}
+      <div class="row"><button class="primary xs" data-act="applyProposal">ЗАСТОСУВАТИ</button><button class="ghost xs" data-act="skipProposal">ПРОПУСТИТИ</button></div></div>` : ''}
+    ${engineHere ? '' : '<div class="row"><span class="muted">Ходи рахує інша вкладка ведучого.</span><button class="ghost xs" data-act="claimEngine">РАХУВАТИ ТУТ</button></div>'}
+    <button class="ghost xs" data-act="campStop">ЗУПИНИТИ КАМПАНІЮ</button>`}`;
+}
+
+function gmChatHTML() {
+  const threads = Object.entries(S.chat || {}).filter(([, v]) => v && Object.keys(v).length);
+  if (!threads.length) return '';
+  const cur = UI.gmChat && S.chat[UI.gmChat] ? UI.gmChat : null;
+  return `<h4>ЛИСТУВАННЯ З ҐРЕТОЮ</h4><div class="chat-tabs">${threads.map(([cid, v]) => {
+      const n = Object.keys(v).length; const unread = n > (UI.chatSeen[cid] || 0) && Object.values(v).slice(-1)[0].from === 'p';
+      return `<button class="tog ${cur === cid ? 'on' : ''} ${unread ? 'unread' : ''}" data-act="gmChat" data-id="${cid}">${esc(CHAR_BY_ID[cid].name)}</button>`; }).join('')}</div>
+    ${cur ? `${(UI.chatSeen[cur] = Object.keys(S.chat[cur] || {}).length, '')}<div class="msgs gm">${chatHTML(cur)}</div><div class="row"><input id="chatText" maxlength="400" placeholder="Відповідь від імені Ґрети"><button class="primary xs" data-act="chatSend">ВІДПОВІСТИ</button></div>` : ''}`;
+}
+
+function seatedOrder() { return CHARACTERS.map(c => c.id).filter(id => S.seats[id]); }
+
+async function startTurn(id) {
+  await store.update(`game/chars/${id}`, { ap: CAMPAIGN.apPerTurn, endReq: null });
+  await store.update('game/state', { turn: id, turnStart: Date.now() });
+  const c = CHAR_BY_ID[id];
+  await store.push('game/log', { uid: store.uid, who: 'Хід', charId: id, text: `${c.name} (${S.seats[id] ? S.seats[id].name : '—'})`, kind: 'turn' });
+}
+
+async function advanceTurn() {
+  if (UI.advancing) return; UI.advancing = true;
+  try {
+    const order = seatedOrder(); if (!order.length) return;
+    const cur = ST().turn; const i = order.indexOf(cur);
+    if (i >= 0 && i < order.length - 1) await startTurn(order[i + 1]);
+    else { const goOn = await endRound(); if (goOn) await startTurn(seatedOrder()[0]); }
+  } finally { setTimeout(() => { UI.advancing = false; }, 800); }
+}
+
+function gretaLine(t) { let pool = GRETA_LINES[0][1]; for (const [lvl, l] of GRETA_LINES) if (t >= lvl) pool = l; return pool[rnd(pool.length)]; }
+
+// Підсумок кола: повертає список змін (для автопілота — застосовуються, для ручного — пропозиція).
+function computeRound() {
+  const st = ST(); const round = st.round || 1;
+  const inbox = Object.values((S.gm && S.gm.inbox) || {}).filter(v => v.viol && (v.round || 0) === round);
+  const viol = inbox.length;
+  const add = 1 + Math.floor(viol / 2);
+  const ev = ROUND_EVENTS[rnd(ROUND_EVENTS.length)];
+  const lines = [`Загроза +${add}${viol ? ` (порушень за коло: ${viol})` : ''}`, `Подія: ${ev.text}`];
+  const say = gretaLine((st.threat || 0) + add);
+  lines.push(`Ґрета каже: «${say}»`);
+  return { round, add, ev, say, lines };
+}
+
+async function applyRound(p) {
+  const st = ST();
+  let threat = clamp((st.threat || 0) + p.add + (p.ev.effect.threat || 0), 0, CAMPAIGN.threatMax);
+  let o2 = st.o2 ?? O2_START;
+  const upd = {}; const locks = { ...(st.locks || {}) }; const temp = {};
+  const effect = p.ev.effect;
+  if (effect.o2) o2 += effect.o2;
+  if (effect.lockRandom) { const pool = ROOMS.filter(r => !['C1', 'OUT'].includes(r.id)); temp[pool[rnd(pool.length)].id] = true; }
+  // стадії загрози
+  let o2Round = 0;
+  for (let lvl = 1; lvl <= threat; lvl++) { const sg = THREAT_STAGES[lvl]; if (sg && sg.o2PerRound) o2Round = 30; }
+  o2 -= o2Round;
+  for (let lvl = (st.threat || 0) + 1; lvl <= threat; lvl++) {
+    const sg = THREAT_STAGES[lvl]; if (!sg) continue;
+    await store.push('game/log', { uid: store.uid, who: `Загроза ${lvl}`, text: sg.text, kind: 'bad' });
+  }
+  await store.push('game/log', { uid: store.uid, who: `Коло ${p.round}`, text: p.ev.text, kind: 'event' });
+  // стрес від події
+  const order = seatedOrder();
+  const stressIds = effect.stressAll ? order : (effect.stressOne && order.length ? [order[rnd(order.length)]] : []);
+  for (const cid of stressIds) { const c = S.chars[cid] || {}; await store.update(`game/chars/${cid}`, { stress: clamp((c.stress || 2) + 1, c.minStress || 2, 20) }); }
+  Object.assign(upd, { threat, o2: Math.max(0, o2), locks, tempLocks: temp, proposal: null, greta: { text: p.say, voice: true, ts: Date.now() } });
+  await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: p.say, kind: 'greta' });
+  if (threat >= CAMPAIGN.threatMax) Object.assign(upd, { phase: 'lost', endText: THREAT_STAGES[10].text, turn: null });
+  else if (o2 <= 0) Object.assign(upd, { phase: 'lost', endText: 'Кисень закінчився. Ґрета вимикає світло в порожніх коридорах.', turn: null });
+  await store.update('game/state', upd);
+  return !(upd.phase === 'lost');
+}
+
+async function endRound() {
+  const st = ST(); const p = computeRound();
+  await store.update('game/state', { round: (st.round || 1) + 1, tempLocks: null });
+  if (st.autopilot) return applyRound(p);
+  await store.update('game/state', { proposal: { round: p.round, lines: p.lines, add: p.add, ev: p.ev, say: p.say } });
+  return true;
+}
+
+function engineTick() {
+  const st = ST();
+  if (!S.isAdmin || !S.state) return;
+  const now = Date.now();
+  if (st.engine === UI.tabId) { if (now - (st.engineBeat || 0) > 10000) store.update('game/state', { engineBeat: now }); }
+  else if (now - (st.engineBeat || 0) > 25000) { store.update('game/state', { engine: UI.tabId, engineBeat: now }); return; }
+  if (st.engine !== UI.tabId || !inPlay() || st.paused) return;
+  const t = st.turn;
+  if (!t || !S.seats[t]) { if (seatedOrder().length) advanceTurn(); return; }
+  const c = S.chars[t] || {};
+  const timeUp = st.turnStart && (Date.now() - st.turnStart) / 1000 >= (st.turnSec || CAMPAIGN.turnSec);
+  if ((c.ap ?? 1) <= 0 || (c.endReq && c.endReq >= (st.turnStart || 0)) || timeUp) advanceTurn();
+  if (threatLevel() >= CAMPAIGN.threatMax) { store.update('game/state', { phase: 'lost', turn: null, endText: THREAT_STAGES[10].text }); return; }
+  // перемога
+  if ((S.goals || {}).core >= OBJ_BY_ID.core.need) store.update('game/state', { phase: 'won', turn: null, endText: 'Ядро Ґрети вимкнено. STS-187 знову ваш. Надовго?' });
+}
+
 async function setTurnTo(id) {
   await store.update('game/state', { turn: id });
   const c = CHAR_BY_ID[id];
@@ -545,7 +798,8 @@ async function setTurnTo(id) {
 async function gmReset() {
   await store.update('game', {
     chars: initialChars(), seats: null, log: null,
-    state: { o2: O2_START, mode: 'assist', cutscene: null, greta: null, started: Date.now() }
+    goals: null, chat: null, requests: null,
+    state: { o2: O2_START, mode: 'assist', cutscene: null, greta: null, started: Date.now(), phase: 'setup', engine: UI.tabId, autopilot: true, turnSec: CAMPAIGN.turnSec }
   });
   await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Новий сеанс. Екіпаж STS-187, доповідайте.', kind: 'system' });
 }
@@ -571,6 +825,10 @@ async function bootGM() {
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
   subs.push(store.on('game/secrets', v => { S.secrets = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('textarea[id^=sec-]')) renderCrew(); }));
+  subs.push(store.on('game/goals', v => { S.goals = v || {}; if ($('#gmRoot')) renderGMControls(); }));
+  subs.push(store.on('game/chat', v => { S.chat = v || {}; if ($('#gmRoot') && !(document.activeElement?.id === 'chatText' && document.activeElement.value)) renderGMControls(); }));
+  setInterval(() => { tickTimer(); engineTick(); }, 1000);
+  setTimeout(() => { if (S.state && !S.state.engine) store.update('game/state', { engine: UI.tabId }); }, 1500);
   subs.push(store.on('game/requests', v => { S.requests = v || {}; if ($('#gmRoot')) renderGMControls(); }));
   subs.push(store.on('game/gm', v => { S.gm = v || {}; if ($('#gmRoot')) renderGMControls(); }));
   subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('#ctl input, #ctl textarea')) renderGMControls(); }, 120));
@@ -624,18 +882,60 @@ const actions = {
     if (!IS_GM_PAGE && turnId() && turnId() !== id) { toast('Зараз не ваш хід — переходити можна лише у свій хід.'); return; }
     if (!IS_GM_PAGE && S.chars[id].loc === rid) { UI.view = 'loc'; renderMain(true); return; }
     if (!IS_GM_PAGE && !canEnter(id, rid)) { lockModal(rid); return; }
+    if (!IS_GM_PAGE && !(await spendAP(1, 'Перехід'))) return;
     if (!IS_GM_PAGE) { UI.view = 'loc'; UI.imgIdx = 0; }
     await store.update(`game/chars/${id}`, { loc: rid });
     renderMain(true);
   },
   secretModal() { secretModal(); },
+  async endTurn() { const id = myCharId(); await store.update(`game/chars/${id}`, { endReq: Date.now() }); toast('Хід завершено.', true); },
+  async longAction(el) {
+    const id = myCharId(); const a = el.dataset.a; const st = S.chars[id];
+    if (!myTurnActive() || apLeft(id) < CAMPAIGN.apPerTurn) return toast('Довга дія — лише на початку свого ходу.');
+    const upd = { ap: 0, endReq: Date.now() };
+    let txt = '';
+    if (a === 'sleep') { upd.stress = Math.max(st.minStress || 2, (st.stress || 2) - 2); txt = `спить. Стрес ${upd.stress}.`; }
+    if (a === 'train') { upd.buff = 'train'; txt = 'тренується. Наступна фізична перевірка з перевагою.'; }
+    if (a === 'study') { upd.buff = 'study'; txt = 'вчиться. Наступна перевірка з навичкою +10.'; }
+    await store.update(`game/chars/${id}`, upd);
+    await logPush(txt, 'system', id);
+  },
+  async objective(el) {
+    const o = OBJ_BY_ID[el.dataset.o]; const id = myCharId(); const c = CHAR_BY_ID[id]; const st = S.chars[id];
+    const a = availableObjective(o.room); if (!a || a.done || a.locked) return;
+    if (!(await spendAP(1, 'Робота над ціллю'))) return;
+    const sk = bestSkill(c, o.skills);
+    const target = c.stats[o.stat] + (sk ? sk[1] : 0);
+    const r = d100(); const rank = evalCheck(r, target); const ok = rank >= 2;
+    UI.lastRoll = { big: pad2(r), label: ok ? 'ПРОГРЕС' : 'НЕ ВДАЛОСЯ', rank, sub: `${o.title}: Інтелект${sk ? ' + ' + sk[0] : ''} = ${target}` };
+    if (ok) {
+      const n = ((S.goals || {})[o.id] || 0) + (rank === 3 ? 2 : 1);
+      await store.update('game/goals', { [o.id]: Math.min(n, o.need) });
+      await logPush(`${o.title}: прогрес ${Math.min(n, o.need)}/${o.need}${rank === 3 ? ' (критичний успіх)' : ''}`, 'good', id);
+    } else {
+      await store.update(`game/chars/${id}`, { stress: clamp((st.stress || 2) + 1, st.minStress || 2, 20) });
+      await gmNote(`ПРОВАЛ: робота над ціллю «${o.title}» у ${o.room}. Ґрета могла помітити.`, true);
+      if (rank === 0) UI.panicPrompt = true;
+      toast('Не вийшло. +1 Стрес. Ґрета могла це помітити.');
+    }
+    renderTray();
+  },
+  chatOpen() { const id = myCharId(); if (!id) return; UI.chatOpen = id; $('#chatBtn') && $('#chatBtn').classList.remove('new'); chatModal(id); },
+  chatClose() { UI.chatOpen = null; $('#modal').innerHTML = ''; },
+  async chatSend() {
+    const text = ($('#chatText').value || '').trim(); if (!text) return;
+    const id = IS_GM_PAGE ? UI.gmChat : myCharId();
+    $('#chatText').value = '';
+    await store.push(`game/chat/${id}`, { uid: store.uid, from: IS_GM_PAGE ? 'g' : 'p', text });
+  },
   closeModal() { $('#modal').innerHTML = ''; },
   async hack(el) {
     const rid = el.dataset.room; const force = el.dataset.mode === 'force';
     const id = myCharId(); const c = CHAR_BY_ID[id]; const st = S.chars[id]; const r = ROOM_BY_ID[rid];
     const sk = force ? bestSkill(c, ['Атлетика', 'Рукопашний бій']) : bestSkill(c, ['Комп\'ютери', 'Ремонт механізмів', 'Інженерія']);
     const target = (force ? c.stats.str : c.stats.int) + (sk ? sk[1] : 0);
-    const dis = force || r.hard;
+    if (!(await spendAP(1, 'Злом'))) return;
+    const dis = force || r.hard || isLocked(rid);
     const rolls = dis ? [d100(), d100()] : [d100()];
     const ranks = rolls.map(x => evalCheck(x, target));
     const i = dis ? (ranks[0] <= ranks[1] ? 0 : 1) : 0;
@@ -644,7 +944,7 @@ const actions = {
     if (!ok) await store.update(`game/chars/${id}`, { stress: clamp((st.stress || 2) + 1, st.minStress || 2, 20) });
     UI.lastRoll = { big: pad2(rolls[i]), label: ok ? 'ДВЕРІ ВІДЧИНЕНО' : 'НЕ ВДАЛОСЯ', rank, sub: `${force ? 'Сила' : 'Інтелект'}${sk ? ' + ' + sk[0] : ''} = ${target}${dis ? ' [−]' : ''}` };
     if (rank === 0) UI.panicPrompt = true;
-    await gmNote(`${ok ? 'УСПІХ' : 'ПРОВАЛ'}: спроба ${what} ${r.id} (${r.name}). Кидок ${rolls.map(pad2).join('/')} проти ${target}${dis ? ' [−]' : ''}.${force ? ' ГУЧНО.' : ''}`);
+    await gmNote(`${ok ? 'УСПІХ' : 'ПРОВАЛ'}: спроба ${what} ${r.id} (${r.name}). Кидок ${rolls.map(pad2).join('/')} проти ${target}${dis ? ' [−]' : ''}.${force ? ' ГУЧНО.' : ''}`, !ok || force || isLocked(rid));
     $('#modal').innerHTML = '';
     if (ok) { UI.view = 'loc'; UI.imgIdx = 0; await store.update(`game/chars/${id}`, { loc: rid }); renderMain(true); }
     else toast(force ? 'Двері не піддалися. Шум чути далеко.' : 'Замок не піддався. +1 Стрес');
@@ -652,6 +952,7 @@ const actions = {
   },
   async askGreta(el) {
     const rid = el.dataset.room; const id = myCharId();
+    if (!(await spendAP(1, 'Запит до Ґрети'))) return;
     await store.set(`game/requests/${id}`, { uid: store.uid, room: rid, status: 'pending', ts: Date.now() });
     $('#modal').innerHTML = '';
     toast('Запит надіслано. Ґрета розглядає…');
@@ -690,12 +991,41 @@ const actions = {
   async gWound(el) { const st = S.chars[el.dataset.id]; await store.update(`game/chars/${el.dataset.id}`, { wounds: clamp((st.wounds || 0) + +el.dataset.d, 0, 2) }); },
   async setTurn(el) { await setTurnTo(el.dataset.id); },
   async nextTurn() {
+    if (inPlay()) return advanceTurn();
     const seated = CHARACTERS.map(c => c.id).filter(id => S.seats[id]);
     if (!seated.length) return toast('Ще ніхто не сів за стіл.');
     const i = seated.indexOf(turnId());
     await setTurnTo(seated[(i + 1) % seated.length]);
   },
   async freeTurn() { await store.update('game/state', { turn: null }); await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Вільний режим: кожен діє сам.', kind: 'system' }); },
+  async campStart() {
+    const order = seatedOrder();
+    if (!order.length) return toast('Ще ніхто не сів за стіл.');
+    await store.remove('game/goals');
+    await store.update('game/state', { phase: 'play', round: 1, threat: 0, locks: null, tempLocks: null, proposal: null, autopilot: ST().autopilot ?? true,
+      turnSec: ST().turnSec || CAMPAIGN.turnSec, engine: UI.tabId, paused: false, endText: null });
+    await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Коло 1. Усі системи в нормі. Відпочивайте.', kind: 'greta' });
+    await startTurn(order[0]);
+  },
+  async campStop() { await store.update('game/state', { phase: 'setup', turn: null, proposal: null }); },
+  async threat(el) {
+    const was = threatLevel(); const now = clamp(was + +el.dataset.d, 0, CAMPAIGN.threatMax);
+    await store.update('game/state', { threat: now });
+    if (now > was && THREAT_STAGES[now]) await store.push('game/log', { uid: store.uid, who: `Загроза ${now}`, text: THREAT_STAGES[now].text, kind: 'bad' });
+  },
+  async deal() {
+    await store.update('game/state', { threat: clamp(threatLevel() - 2, 0, CAMPAIGN.threatMax) });
+    await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Угоду прийнято. Я вмію бути вдячною. Поки що.', kind: 'greta' });
+  },
+  async autopilot() { await store.update('game/state', { autopilot: !ST().autopilot }); },
+  async pause() { await store.update('game/state', { paused: true, pausedAt: Date.now() }); },
+  async resume() { const st = ST(); await store.update('game/state', { paused: false, turnStart: (st.turnStart || Date.now()) + (Date.now() - (st.pausedAt || Date.now())) }); },
+  async goal(el) { const o = OBJ_BY_ID[el.dataset.o]; const n = clamp(((S.goals || {})[o.id] || 0) + +el.dataset.d, 0, o.need); await store.update('game/goals', { [o.id]: n }); },
+  async applyProposal() { const p = ST().proposal; if (p) await applyRound(p); },
+  async skipProposal() { await store.update('game/state', { proposal: null }); },
+  async claimEngine() { await store.update('game/state', { engine: UI.tabId }); },
+  hideEnd() { UI.endHidden = true; $('#endScreen').innerHTML = ''; },
+  gmChat(el) { UI.gmChat = el.dataset.id; UI.chatSeen[UI.gmChat] = Object.keys(S.chat[UI.gmChat] || {}).length; renderGMControls(); },
   async gStress(el) { const st = S.chars[el.dataset.id]; await store.update(`game/chars/${el.dataset.id}`, { stress: clamp((st.stress ?? 2) + +el.dataset.d, st.minStress || 2, 20) }); },
   async gMin(el) { const st = S.chars[el.dataset.id]; const m = clamp((st.minStress || 2) + 1, 2, 20); await store.update(`game/chars/${el.dataset.id}`, { minStress: m, stress: Math.max(m, st.stress || 2) }); },
   async saveSecret(el) { const id = el.dataset.id; await store.set(`game/secrets/${id}`, { text: $('#sec-' + id).value.trim() }); },
@@ -734,6 +1064,7 @@ document.addEventListener('click', async e => {
   try { await fn(el); } catch (err) { console.error(err); toast('Помилка: ' + err.message); }
 });
 document.addEventListener('change', async e => {
+  if (e.target.matches && e.target.matches('select[data-turnsec]')) { await store.update('game/state', { turnSec: +e.target.value }); return; }
   if (e.target.matches && e.target.matches('select[data-gmview]')) {
     UI.gmSel = null; UI.gmView = e.target.value; UI.imgIdx = 0; renderMain(true); renderCrew(); return;
   }
@@ -746,6 +1077,7 @@ document.addEventListener('toggle', e => {
   const d = e.target; if (!d.matches || !d.matches('details[data-sec]')) return;
   if (d.open) UI.openSec.add(d.dataset.sec); else UI.openSec.delete(d.dataset.sec);
 }, true);
+document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'chatText') actions.chatSend(); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'joinName' && UI.pick) actions.join(); });
 
 const introStart = Date.now();
