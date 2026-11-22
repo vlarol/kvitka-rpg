@@ -15,15 +15,15 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;700&family=Oswald:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=202611221233">
+  <link rel="stylesheet" href="css/style.css?v=202611221237">
 </head>
 <body>
   <div id="intro" class="intro">
-    <img src="assets/cover.jpg" alt="Квітка Розуму">
+    <picture><source media="(orientation: portrait) and (max-width: 900px)" srcset="assets/cover-m.jpg"><img src="assets/cover.jpg" alt="Квітка Розуму"></picture>
     <div class="intro-ui" id="introMsg"><div class="ring mode-assist"><span></span></div><span>ВСТАНОВЛЮЮ ЗВ'ЯЗОК З STS-187…</span></div>
   </div>
   <div id="app"></div>
   <script>if ('serviceWorker' in navigator && !/[?&#]gm\b/.test(location.search + location.hash)) navigator.serviceWorker.register('sw.js').catch(() => {});</script>
-  <script type="module" src="js/app.js?v=202611221233"></script>
+  <script type="module" src="js/app.js?v=202611221237"></script>
 </body>
 </html>
