@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221128';
+import { createStore } from './store.js?v=202611221138';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221128';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221128';
+} from './data.js?v=202611221138';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221138';
 
-const VERSION = '202611221128';
+const VERSION = '202611221138';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -400,6 +400,64 @@ function figuresHTML(list, rid) {
   }).join('')}</div>`;
 }
 
+// ---------- сховані предмети (бачить лише ведучий) ----------
+function itemPos(it) { const p = ((S.gm && S.gm.itemPos) || {})[it.id]; return p ? p : { x: it.x, y: it.y }; }
+function itemFound(it) { return !!(((S.gm && S.gm.itemsFound) || {})[it.id]); }
+function itemMarkersHTML(rid) {
+  const list = (S.items || []).filter(it => it.room === rid);
+  if (!list.length) return '';
+  return `<div class="item-marks">${list.map(it => { const p = itemPos(it); const f = itemFound(it);
+    return `<div class="item-mark ${f ? 'found' : ''}" data-item="${it.id}" style="left:${p.x}%;top:${p.y}%">
+      <span>${f ? '✓' : '◆'}</span>
+      <div class="item-tip"><img src="assets/items/${it.id}.webp" alt=""><b>${esc(it.id)} · ${esc(it.name)}</b><em>${esc(it.spot)}</em>
+        <p>${esc(it.effect)}</p><small>Підказка: ${esc(it.clue)}</small>${f ? '<i>ЗНАЙДЕНО</i>' : ''}<u>клік — показати гравцям · тягни — перемістити</u></div></div>`; }).join('')}</div>`;
+}
+function itemModal(id) {
+  const it = (S.items || []).find(x => x.id === id); if (!it) return;
+  const inRoom = seatedOrder().filter(cid => (S.chars[cid] || {}).loc === it.room);
+  const f = itemFound(it);
+  $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModal"></div><div class="modal item-modal">
+    <small>${esc(it.id)} · ${esc(it.room)} · ${esc((ROOM_BY_ID[it.room] || {}).name || '')}</small>
+    <div class="item-row"><img src="assets/items/${it.id}.webp" alt=""><div><h2>${esc(it.name)}</h2><p class="muted">Схованка: ${esc(it.spot)}</p></div></div>
+    <p>${esc(it.effect)}</p><p class="muted">Підказка: ${esc(it.clue)}</p>
+    <button class="primary" data-act="itemReveal" data-id="${it.id}" data-to="room" ${inRoom.length ? '' : 'disabled'}>ПОКАЗАТИ ТИМ, ХТО В КІМНАТІ${inRoom.length ? ': ' + inRoom.map(c => CHAR_BY_ID[c].name).join(', ') : ' (нікого)'}</button>
+    <button class="ghost" data-act="itemReveal" data-id="${it.id}" data-to="all">ПОКАЗАТИ ВСІМ</button>
+    <button class="ghost small" data-act="itemFoundToggle" data-id="${it.id}">${f ? 'ПОВЕРНУТИ В СХОВАНКУ' : 'ЛИШЕ ПОЗНАЧИТИ ЗНАЙДЕНИМ'}</button>
+    <button class="ghost small" data-act="closeModal">ЗАКРИТИ</button></div>`;
+}
+// перетягування міток
+let itemDrag = null;
+document.addEventListener('pointerdown', e => {
+  const m = IS_GM_PAGE && e.target.closest && e.target.closest('.item-mark'); if (!m) return;
+  const box = m.closest('.loc').getBoundingClientRect();
+  itemDrag = { m, id: m.dataset.item, box, x0: e.clientX, y0: e.clientY, moved: false };
+  m.setPointerCapture(e.pointerId); e.preventDefault();
+});
+document.addEventListener('pointermove', e => {
+  if (!itemDrag) return;
+  if (Math.abs(e.clientX - itemDrag.x0) + Math.abs(e.clientY - itemDrag.y0) > 5) itemDrag.moved = true;
+  if (!itemDrag.moved) return;
+  const b = itemDrag.box;
+  itemDrag.x = clamp((e.clientX - b.left) / b.width * 100, 1, 99); itemDrag.y = clamp((e.clientY - b.top) / b.height * 100, 1, 99);
+  itemDrag.m.style.left = itemDrag.x + '%'; itemDrag.m.style.top = itemDrag.y + '%'; itemDrag.m.classList.add('dragging');
+});
+document.addEventListener('pointerup', async () => {
+  if (!itemDrag) return; const d = itemDrag; itemDrag = null;
+  if (d.moved) await store.update('game/gm/itemPos', { [d.id]: { x: Math.round(d.x * 10) / 10, y: Math.round(d.y * 10) / 10 } });
+  else itemModal(d.id);
+});
+function revealBox() {
+  const rv = ST().reveal; const el = $('#revealBox'); if (!el || !rv || IS_GM_PAGE) return;
+  if (rv.ts === UI.revealTs) return;
+  const first = UI.revealTs === undefined; UI.revealTs = rv.ts;
+  if (first && Date.now() - rv.ts > 15000) return;
+  const me = myCharId();
+  if (rv.to !== 'all' && !(rv.to || []).includes(me)) return;
+  el.innerHTML = `<div class="reveal" data-act="revealClose"><small>ЗНАЙДЕНО</small><img src="assets/items/${esc(rv.id)}.webp" alt=""><h2>${esc(rv.name)}</h2><p>${esc(rv.effect)}</p></div>`;
+  if (navigator.vibrate) navigator.vibrate(80);
+  clearTimeout(UI.revealT); UI.revealT = setTimeout(() => { el.innerHTML = ''; }, 9000);
+}
+
 function locHTML(rid) {
   const r = ROOM_BY_ID[rid] || ROOM_BY_ID.A1;
   const here = CHARACTERS.filter(c => S.chars[c.id] && S.chars[c.id].loc === r.id && (S.seats[c.id] || IS_GM_PAGE));
@@ -410,6 +468,7 @@ function locHTML(rid) {
     <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
     ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
     ${figuresHTML([...here, ...robotsIn(r.id)], r.id)}
+    ${IS_GM_PAGE ? itemMarkersHTML(r.id) : ''}
     ${!IS_GM_PAGE && robotsIn(r.id).some(x => x.type === 'xt2') && myCharId() && S.chars[myCharId()] && S.chars[myCharId()].loc === r.id ? '<button class="ghost small xt2-btn" data-act="askXT2">ПОПРОСИТИ ХТ2 · 1 ДІЯ</button>' : ''}
     ${objectiveHTML(r.id)}
     <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}${robotsIn(r.id).map(x => `<span class="chipc robot ${x.type}">${esc(x.name)}</span>`).join('')}</div>
@@ -421,9 +480,10 @@ function locHTML(rid) {
 function renderMain(force) {
   const el = $('#map'); if (!el) return;
   const rid = currentRoom();
-  const key = UI.view === 'map'
+  let key = UI.view === 'map'
     ? 'map|' + JSON.stringify(S.chars) + JSON.stringify(Object.keys(S.seats || {})) + UI.gmSel + JSON.stringify(ST().robots || {})
     : `loc|${rid}|${UI.imgIdx}|${turnId()}|${JSON.stringify(S.goals || {})}|${ST().phase}|${JSON.stringify(ST().robots || {})}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
+  if (IS_GM_PAGE) key += JSON.stringify((S.gm && S.gm.itemPos) || {}) + JSON.stringify((S.gm && S.gm.itemsFound) || {}) + (S.items ? S.items.length : 0);
   if (!force && key === UI.mainKey) return;
   UI.mainKey = key;
   const tabs = `<div class="viewtabs"><button class="tog ${UI.view === 'loc' ? 'on' : ''}" data-act="view" data-v="loc">ЛОКАЦІЯ</button><button class="tog ${UI.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">МАПА</button></div>`;
@@ -502,7 +562,7 @@ function renderPlayer() {
         <aside class="sheet" id="sheet" data-pane="sheet"></aside><aside class="logcol" data-pane="log"><h4>ЖУРНАЛ</h4><div id="log" class="log"></div></aside>
         <section class="chatpane" id="chatPane" data-pane="greta"></section></main>
       <footer class="tray" id="tray" data-pane="dice"></footer>
-      <nav class="tabbar" id="tabbar"></nav><div id="turnFlash"></div>
+      <nav class="tabbar" id="tabbar"></nav><div id="turnFlash"></div><div id="revealBox"></div>
       <div id="cut"></div><div id="modal"></div><div id="endScreen"></div></div>`;
   }
   const c = CHAR_BY_ID[id];
@@ -516,7 +576,7 @@ function renderPlayer() {
   renderTurn();
   renderMain();
   $('#log').innerHTML = logHTML(S.log);
-  renderSheet(); renderTray(); gretaBanner(); renderCutscene();
+  renderSheet(); renderTray(); gretaBanner(); renderCutscene(); revealBox();
   if (MOBILE) { renderTabbar(); if (UI.tab === 'greta') renderChatPane(); }
 }
 
@@ -753,7 +813,7 @@ function renderGM() {
         <div id="modes" class="modes"></div><div id="ring"></div></header>
       <div id="greta"></div>
       <main class="layout gm-layout"><aside class="crewcol" id="crew"></aside><section class="mapcol" id="map"></section>
-        <aside class="ctlcol" id="ctl"></aside></main><div id="endScreen"></div></div>`;
+        <aside class="ctlcol" id="ctl"></aside></main><div id="endScreen"></div><div id="modal"></div></div>`;
   }
   $('#o2').innerHTML = o2HTML();
   const mode = S.state ? S.state.mode : 'assist';
@@ -1071,7 +1131,7 @@ async function setTurnTo(id) {
 async function gmReset() {
   await store.update('game', {
     chars: initialChars(), seats: null, log: null,
-    goals: null, chat: null, requests: null, seatcodes: null,
+    goals: null, chat: null, requests: null, seatcodes: null, 'gm/itemsFound': null,
     state: { o2: O2_START, mode: 'assist', cutscene: null, greta: null, started: Date.now(), phase: 'setup', engine: UI.tabId, autopilot: true, turnSec: CAMPAIGN.turnSec }
   });
   await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Новий сеанс. Екіпаж STS-187, доповідайте.', kind: 'system' });
@@ -1094,6 +1154,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
+  try { S.items = (await import('./gm-items.js?v=202611221138')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
@@ -1106,7 +1167,7 @@ async function bootGM() {
   setInterval(() => { tickTimer(); engineTick(); }, 1000);
   setTimeout(() => { if (S.state && !S.state.engine) store.update('game/state', { engine: UI.tabId }); }, 1500);
   subs.push(store.on('game/requests', v => { S.requests = v || {}; if ($('#gmRoot')) renderGMControls(); }));
-  subs.push(store.on('game/gm', v => { S.gm = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('#ctl input, #ctl textarea')) renderGMControls(); }));
+  subs.push(store.on('game/gm', v => { S.gm = v || {}; if ($('#gmRoot')) { renderMain(); if (!document.activeElement?.matches('#ctl input, #ctl textarea')) renderGMControls(); } }));
   subs.push(store.on('game/log', v => { S.log = v || {}; if ($('#gmRoot') && !document.activeElement?.matches('#ctl input, #ctl textarea')) renderGMControls(); }, 120));
 }
 
@@ -1181,6 +1242,20 @@ const actions = {
   },
   secretModal() { secretModal(); },
   tab(el) { setTab(el.dataset.t); },
+  revealClose() { $('#revealBox').innerHTML = ''; },
+  async itemReveal(el) {
+    const it = S.items.find(x => x.id === el.dataset.id); if (!it) return;
+    const to = el.dataset.to === 'all' ? 'all' : seatedOrder().filter(cid => (S.chars[cid] || {}).loc === it.room);
+    await store.update('game/state', { reveal: { id: it.id, name: it.name, effect: it.effect, to, ts: Date.now() } });
+    await store.update('game/gm/itemsFound', { [it.id]: { ts: Date.now(), to: to === 'all' ? 'all' : to.join(',') } });
+    if (to === 'all') await store.push('game/log', { uid: store.uid, who: 'Знахідка', text: `${it.name} (${it.room})`, kind: 'good' });
+    $('#modal').innerHTML = '';
+  },
+  async itemFoundToggle(el) {
+    const id = el.dataset.id; const f = ((S.gm && S.gm.itemsFound) || {})[id];
+    if (f) await store.remove(`game/gm/itemsFound/${id}`); else await store.update('game/gm/itemsFound', { [id]: { ts: Date.now() } });
+    $('#modal').innerHTML = '';
+  },
   rollClose() { UI.rollOpen = false; $('#modal').innerHTML = ''; },
   flashClose() { $('#turnFlash').innerHTML = ''; },
   async askXT2() {

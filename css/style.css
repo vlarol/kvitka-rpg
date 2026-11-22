@@ -600,3 +600,38 @@ html.mobile .join-foot { flex-direction: column; position: sticky; bottom: 0; ba
 html.mobile .join-foot .primary { min-height: 52px; }
 html.mobile .center-msg.cover { height: 100dvh; }
 html.mobile .player .mapcol:has(.map) .viewtabs { position: sticky; left: 0; width: calc(100vw - 12px); z-index: 4; }
+
+/* сховані предмети (ведучий) */
+.item-marks { position: absolute; inset: 0; z-index: 6; pointer-events: none; }
+.item-mark { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; touch-action: none; }
+.item-mark > span { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: rgba(255,107,26,.92); color: #120a05;
+  font: 700 12px var(--mono); box-shadow: 0 0 0 2px rgba(0,0,0,.6), 0 0 14px rgba(255,107,26,.8); animation: markPulse 2s ease-in-out infinite; }
+.item-mark.found > span { background: rgba(127,208,160,.9); box-shadow: 0 0 0 2px rgba(0,0,0,.6); animation: none; }
+.item-mark.dragging { cursor: grabbing; } .item-mark.dragging .item-tip { display: none; }
+@keyframes markPulse { 50% { box-shadow: 0 0 0 2px rgba(0,0,0,.6), 0 0 26px rgba(255,107,26,1); } }
+.item-tip { display: none; position: absolute; left: 50%; bottom: 34px; transform: translateX(-50%); width: 260px; background: rgba(10,12,14,.96);
+  border: 1px solid var(--orange); padding: 10px; font-size: 12px; z-index: 7; pointer-events: none; }
+.item-mark:hover .item-tip { display: block; }
+.item-tip img { width: 100%; height: 110px; object-fit: contain; }
+.item-tip b { display: block; font-family: var(--head); letter-spacing: .06em; text-transform: uppercase; color: var(--orange); margin: 4px 0 2px; }
+.item-tip em { display: block; color: var(--teal); font-style: normal; margin-bottom: 4px; }
+.item-tip p { margin: 0 0 4px; } .item-tip small { color: var(--muted); display: block; }
+.item-tip i { display: block; color: var(--ok); font-style: normal; font-family: var(--head); letter-spacing: .14em; margin-top: 4px; }
+.item-tip u { display: block; text-decoration: none; color: #555d66; font-size: 10px; margin-top: 6px; }
+.item-modal { border-color: var(--orange); width: min(560px, 94vw); }
+.item-modal small { color: var(--orange); }
+.item-row { display: flex; gap: 14px; align-items: center; }
+.item-row img { width: 150px; height: 120px; object-fit: contain; flex: none; background: radial-gradient(circle, #1c2128, transparent 70%); }
+.item-row h2 { font-size: 20px; }
+
+/* знахідка (гравці) */
+.reveal { position: fixed; z-index: 86; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(420px, 90vw); background: rgba(10,12,14,.97);
+  border: 1px solid var(--orange); padding: 18px 20px 20px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px;
+  box-shadow: 0 0 60px rgba(255,107,26,.25); animation: revealIn .45s cubic-bezier(.2,1.4,.4,1); cursor: pointer;
+  clip-path: polygon(16px 0, 100% 0, 100% calc(100% - 16px), calc(100% - 16px) 100%, 0 100%, 0 16px); }
+@keyframes revealIn { from { opacity: 0; transform: translate(-50%, -46%) scale(.92); } }
+.reveal small { font-family: var(--head); letter-spacing: .3em; color: var(--orange); }
+.reveal img { width: 78%; max-height: 220px; object-fit: contain; filter: drop-shadow(0 12px 18px rgba(0,0,0,.7)); }
+.reveal h2 { margin: 0; font-family: var(--head); font-weight: 500; letter-spacing: .06em; text-transform: uppercase; font-size: 20px; }
+.reveal p { margin: 0; color: var(--text); font-size: 14px; }
+.loc .item-tip img { position: static; inset: auto; width: 100%; height: 110px; object-fit: contain; animation: none; display: block; }
