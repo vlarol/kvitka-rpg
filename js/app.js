@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221228';
+import { createStore } from './store.js?v=202611221231';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221228';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES } from './campaign.js?v=202611221228';
+} from './data.js?v=202611221231';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES } from './campaign.js?v=202611221231';
 
-const VERSION = '202611221228';
+const VERSION = '202611221231';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -160,7 +160,6 @@ function mapHTML(clickable) {
     const seat = S.seats[c.id];
     if (!IS_GM_PAGE) {
       // гравець бачить лише себе і тих, хто в одній кімнаті з ним
-      if (!seat) continue;
       const mine = S.chars[myCharId()];
       if (c.id !== myCharId() && (!mine || mine.loc !== st.loc)) continue;
     }
@@ -461,7 +460,7 @@ function revealBox() {
 
 function locHTML(rid) {
   const r = ROOM_BY_ID[rid] || ROOM_BY_ID.A1;
-  const here = CHARACTERS.filter(c => S.chars[c.id] && S.chars[c.id].loc === r.id && (S.seats[c.id] || IS_GM_PAGE));
+  const here = CHARACTERS.filter(c => S.chars[c.id] && S.chars[c.id].loc === r.id);
   let img = r.imgs.length ? r.imgs[UI.imgIdx % r.imgs.length] : null;
   if (img && MOBILE) img = img.replace('assets/rooms/', 'assets/rooms/m/');
   return `<div class="loc">
@@ -1196,7 +1195,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221228')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221231')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
