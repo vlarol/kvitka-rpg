@@ -451,3 +451,14 @@ h4::after { content: '///'; color: var(--orange); letter-spacing: 0; font-weight
 .loc-here { z-index: 4; }
 .loc-label, .loc-pick, .loc-next, .loc-map, .objective { z-index: 5; }
 .loc img.figure { top: auto; right: auto; width: auto; object-fit: initial; animation: figIn .7s ease both; animation-delay: var(--d, 0s); }
+
+/* роботи */
+.robot-token { position: absolute; transform: translate(-50%, -50%); width: 1.6%; min-width: 14px; aspect-ratio: 1; display: grid; place-items: center;
+  font: 700 9px var(--mono); color: #111; background: #c9ced4; border: 1px solid #111; z-index: 3; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
+.robot-token.xt3 { background: #e2e6ea; box-shadow: 0 0 6px var(--danger); }
+.robot-token.xt2 { background: #e0b04a; }
+.chipc.robot { --c: #aab2ba; }
+.chipc.robot.xt3 { border-color: var(--danger); color: #ff8a7d; }
+.chipc.robot.xt2 { border-color: #e0b04a; color: #f0c870; }
+.xt2-btn { position: absolute; right: 16px; bottom: 64px; z-index: 5; border-color: #e0b04a; color: #f0c870; background: rgba(10,12,14,.8); }
+.xt2-modal { border-color: #e0b04a; } .xt2-modal small { color: #e0b04a; }

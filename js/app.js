@@ -1,11 +1,12 @@
-import { createStore } from './store.js?v=202611221056';
+import { createStore } from './store.js?v=202611221105';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
-  PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars
-} from './data.js?v=202611221056';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221056';
+  PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
+  ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
+} from './data.js?v=202611221105';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS } from './campaign.js?v=202611221105';
 
-const VERSION = '202611221056';
+const VERSION = '202611221105';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -180,6 +181,13 @@ function mapHTML(clickable) {
       tokens += `<button class="token ${sel ? 'me' : ''}" data-act="${IS_GM_PAGE ? 'gmSel' : ''}" data-id="${c.id}" style="left:${x}%;top:${y}%;--c:${c.color}" title="${esc(c.name)}">${esc(c.name[0])}</button>`;
     });
   }
+  const rb = ST().robots || {};
+  const myLoc = !IS_GM_PAGE && myCharId() && S.chars[myCharId()] ? S.chars[myCharId()].loc : null;
+  ROBOTS.forEach((ro, i) => {
+    const pos = rb[ro.id]; if (!pos) return; const r = ROOM_BY_ID[pos.loc]; if (!r) return;
+    if (!IS_GM_PAGE && pos.loc !== myLoc) return;
+    tokens += `<div class="robot-token ${ro.type}" style="left:${r.anchor[0] + 1.6 + (i % 2) * 1.4}%;top:${r.anchor[1] - 2.2}%" title="${esc(ro.name)}">${ro.type === 'xt2' ? '2' : '3'}</div>`;
+  });
   const outside = ROOM_BY_ID.OUT.rects[0];
   return `<div class="map"><img src="assets/ship.png" alt="Схема корабля STS-187">${rooms}
     <div class="outside-label" style="left:${outside[0]}%;top:${outside[1] + outside[3] + 0.5}%">ЗОВНІ</div>${tokens}</div>
@@ -274,7 +282,7 @@ function threatHTML() {
 function timerLeft() {
   const st = ST();
   if (!inPlay() || !st.turnStart || !turnId()) return null;
-  const now = st.paused ? st.pausedAt : Date.now();
+  const now = st.paused ? (st.pausedAt || Date.now()) : Date.now();
   return Math.max(0, Math.ceil((st.turnSec || CAMPAIGN.turnSec) - (now - st.turnStart) / 1000));
 }
 function fmtSec(t) { return `${Math.floor(t / 60)}:${pad2(t % 60)}`; }
@@ -322,13 +330,50 @@ function currentRoom() {
   return id && S.chars[id] ? S.chars[id].loc : 'A1';
 }
 
+// ---------- роботи ----------
+function robotsIn(rid) {
+  const rb = ST().robots || {};
+  return ROBOTS.filter(r => rb[r.id] && rb[r.id].loc === rid);
+}
+function xt3In(rid) { return robotsIn(rid).some(r => r.type === 'xt3'); }
+function robotActive(r) { return !r.minThreat || threatLevel() >= r.minThreat; }
+
+// Ходять роботи на кожен новий хід (рахує пульт ведучого).
+async function moveRobots() {
+  const st = ST(); const rb = JSON.parse(JSON.stringify(st.robots || {}));
+  const seen = [];
+  for (const r of ROBOTS) {
+    if (!robotActive(r)) { delete rb[r.id]; continue; }
+    const cur = rb[r.id] && rb[r.id].loc;
+    let next = cur;
+    if (r.type === 'xt3') {
+      if (!cur) next = r.start;
+      else if (rnd(100) < 60) {
+        const opts = (ROOM_LINKS[cur] || ['C1']).filter(x => x !== 'OUT' && !(x === 'B1' && threatLevel() < 2));
+        next = opts[rnd(opts.length)];
+      }
+    } else {                                   // ХТ2: з'являється й зникає
+      if (!cur) { if (rnd(100) < 25) next = rnd(100) < 40 ? 'N1' : ROOMS.filter(x => x.id !== 'OUT')[rnd(ROOMS.length - 1)].id; }
+      else if (rnd(100) < 35) next = null;
+      else if (rnd(100) < 50) { const opts = (ROOM_LINKS[cur] || ['C1']).filter(x => x !== 'OUT'); next = opts[rnd(opts.length)]; }
+    }
+    if (next) rb[r.id] = { loc: next }; else delete rb[r.id];
+    if (next && next !== cur && r.type === 'xt3') {
+      const who = seatedOrder().filter(cid => (S.chars[cid] || {}).loc === next).map(cid => CHAR_BY_ID[cid].name);
+      if (who.length) seen.push(`${r.name} бачить ${who.join(', ')} у ${next}`);
+    }
+  }
+  await store.update('game/state', { robots: rb });
+  for (const t of seen) await store.push('game/gm/inbox', { uid: store.uid, charId: null, text: `Дрон: ${t}.`, viol: 0, round: st.round || 0 });
+}
+
 // Композиція «як у кадрі»: ближній план (по пояс, збоку), середній, дальній (дрібніше й темніше).
 const FIG_SLOTS = {
   near: { h: 128, b: -58, xs: [20, 78], bright: .92, blur: 0, z: 3 },
   mid:  { h: 74,  b: -8,  xs: [62, 38], bright: .78, blur: 0, z: 2 },
   far:  { h: 40,  b: 20,  xs: [50, 58, 36, 66], bright: .6, blur: .5, z: 1 }
 };
-const SLOT_ORDER = { 1: ['mid'], 2: ['near', 'far'], 3: ['near', 'mid', 'far'], 4: ['near', 'mid', 'far', 'far'] };
+const SLOT_ORDER = { 1: ['mid'], 2: ['near', 'far'], 3: ['near', 'mid', 'far'], 4: ['near', 'mid', 'far', 'far'], 5: ['near', 'mid', 'far', 'far', 'far'] };
 function strHash(str) { let h = 2166136261; for (const ch of str) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); } return h >>> 0; }
 
 function figuresHTML(list, rid) {
@@ -338,16 +383,17 @@ function figuresHTML(list, rid) {
   figs = figs.slice().sort((a, b) => strHash(rid + a.id) - strHash(rid + b.id));
   const t = turnId(); const ti = figs.findIndex(c => c.id === t);
   if (ti > 0) figs.unshift(figs.splice(ti, 1)[0]);
-  const slots = SLOT_ORDER[Math.min(figs.length, 4)];
+  const slots = SLOT_ORDER[Math.min(figs.length, 5)];
   const flip = strHash(rid) % 2 === 1;               // дзеркалимо композицію для різних кімнат
   const used = {};
-  return `<div class="figures">${figs.slice(0, 4).map((c, i) => {
+  return `<div class="figures">${figs.slice(0, 5).map((c, i) => {
     const key = slots[i]; const sl = FIG_SLOTS[key];
     const k = used[key] = (used[key] || 0) + 1;
     let x = sl.xs[(k - 1) % sl.xs.length] + ((strHash(rid + c.id) % 7) - 3);
     if (flip) x = 100 - x;
     const active = c.id === t;
-    const style = `left:${x}%;height:${sl.h}%;bottom:${sl.b}%;z-index:${sl.z};--br:${active ? sl.bright + .06 : sl.bright};--bl:${sl.blur}px;--d:${i * 0.12}s`;
+    const sc = c.scale || 1;
+    const style = `left:${x}%;height:${sl.h * sc}%;bottom:${sl.b + (sc < 1 ? (key === 'near' ? 30 : 0) : 0)}%;z-index:${sl.z};--br:${active ? sl.bright + .06 : sl.bright};--bl:${sl.blur}px;--d:${i * 0.12}s`;
     return `<img class="figure fig-${key} ${active ? 'active' : ''}" src="assets/figures/${c.figure}" alt="${esc(c.name)}" title="${esc(c.name)}" style="${style}">`;
   }).join('')}</div>`;
 }
@@ -360,9 +406,10 @@ function locHTML(rid) {
     ${img ? `<img src="${img}" alt="${esc(r.name)}">` : `<div class="noimg">${r.outside ? 'ЗОВНІ. ВАКУУМ.' : 'НЕМАЄ ЗОБРАЖЕННЯ З КАМЕРИ'}</div>`}
     <div class="loc-label"><small>${turnId() ? 'ХІД · ' + esc(CHAR_BY_ID[turnId()].name) : 'ЛОКАЦІЯ'}</small><b>${esc(r.id)} · ${esc(r.name)}</b></div>
     ${r.imgs.length > 1 ? `<button class="loc-next ghost" data-act="nextImg" title="Інший ракурс">${UI.imgIdx % r.imgs.length + 1}/${r.imgs.length} ▸</button>` : ''}
-    ${figuresHTML(here, r.id)}
+    ${figuresHTML([...here, ...robotsIn(r.id)], r.id)}
+    ${!IS_GM_PAGE && robotsIn(r.id).some(x => x.type === 'xt2') && myCharId() && S.chars[myCharId()] && S.chars[myCharId()].loc === r.id ? '<button class="ghost small xt2-btn" data-act="askXT2">ПОПРОСИТИ ХТ2 · 1 ДІЯ</button>' : ''}
     ${objectiveHTML(r.id)}
-    <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}</div>
+    <div class="loc-here">${here.map(c => `<span class="chipc" style="--c:${c.color}">${esc(c.name)}${S.seats[c.id] ? ' · ' + esc(S.seats[c.id].name) : ''}</span>`).join('')}${robotsIn(r.id).map(x => `<span class="chipc robot ${x.type}">${esc(x.name)}</span>`).join('')}</div>
     ${IS_GM_PAGE ? `<select class="loc-pick" data-gmview="1" title="Дивитися іншу локацію">${ROOMS.map(x => `<option value="${x.id}" ${x.id === r.id ? 'selected' : ''}>${x.id} · ${esc(x.name)}</option>`).join('')}</select>` : ''}
     <button class="loc-map primary" data-act="view" data-v="map">МАПА КОРАБЛЯ</button>
   </div>`;
@@ -372,8 +419,8 @@ function renderMain(force) {
   const el = $('#map'); if (!el) return;
   const rid = currentRoom();
   const key = UI.view === 'map'
-    ? 'map|' + JSON.stringify(S.chars) + JSON.stringify(Object.keys(S.seats || {})) + UI.gmSel
-    : `loc|${rid}|${UI.imgIdx}|${turnId()}|${JSON.stringify(S.goals || {})}|${ST().phase}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
+    ? 'map|' + JSON.stringify(S.chars) + JSON.stringify(Object.keys(S.seats || {})) + UI.gmSel + JSON.stringify(ST().robots || {})
+    : `loc|${rid}|${UI.imgIdx}|${turnId()}|${JSON.stringify(S.goals || {})}|${ST().phase}|${JSON.stringify(ST().robots || {})}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
   if (!force && key === UI.mainKey) return;
   UI.mainKey = key;
   const tabs = `<div class="viewtabs"><button class="tog ${UI.view === 'loc' ? 'on' : ''}" data-act="view" data-v="loc">ЛОКАЦІЯ</button><button class="tog ${UI.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">МАПА</button></div>`;
@@ -726,6 +773,7 @@ function gretaContext(forCid) {
 Закриті тобою кімнати: ${locked.join(', ') || 'немає'}
 Екіпаж:\n${crew || '- нікого'}
 Що екіпаж робить проти тебе (ти бачиш через камери):\n${goals}
+Твої дрони: ${ROBOTS.filter(r => r.type === 'xt3' && (st.robots || {})[r.id]).map(r => `${r.name} у ${st.robots[r.id].loc}`).join(', ') || 'на зарядці'}
 Порушення цього кола:\n${viol || '- немає'}
 Останні події:\n${logs || '- тиша'}
 Кімнати: ${rooms}
@@ -843,6 +891,7 @@ function gmChatHTML() {
 function seatedOrder() { return CHARACTERS.map(c => c.id).filter(id => S.seats[id]); }
 
 async function startTurn(id) {
+  try { await moveRobots(); } catch (e) { console.warn('robots', e); }
   await store.update(`game/chars/${id}`, { ap: CAMPAIGN.apPerTurn, endReq: null });
   await store.update('game/state', { turn: id, turnStart: Date.now() });
   const c = CHAR_BY_ID[id];
@@ -1043,6 +1092,18 @@ const actions = {
     renderMain(true);
   },
   secretModal() { secretModal(); },
+  async askXT2() {
+    const id = myCharId(); if (!(await spendAP(1, 'Звернутися до ХТ2'))) return;
+    const d = dN(6); let text;
+    if (d <= 2) text = 'ХТ2 довго дивиться на вас своїми лінзами. Потім відвертається.';
+    else if (d <= 5) text = XT2_HINTS[rnd(XT2_HINTS.length)];
+    else {
+      const pool = ROOMS.filter(r => r.access !== 'all' && !canEnter(id, r.id) && !isLocked(r.id) && r.id !== 'OUT');
+      if (pool.length) { const k = pool[rnd(pool.length)]; await store.update(`game/chars/${id}/keys`, { [k.id]: true }); text = `ХТ2 простягає вам стару ключ-карту. Доступ: ${k.id} · ${k.name}.`; await gmNote(`ХТ2 дав ${CHAR_BY_ID[id].name} доступ до ${k.id}.`); }
+      else text = 'ХТ2 протягує маніпулятор, але в ньому нічого немає.';
+    }
+    $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModal"></div><div class="modal xt2-modal"><small>ХТ2 · d6 = ${d}</small><h2>СЕРВІСНИЙ РОБОТ</h2><p>${esc(text)}</p><button class="ghost small" data-act="closeModal">ЗРОЗУМІЛО</button></div>`;
+  },
   async endTurn() { const id = myCharId(); await store.update(`game/chars/${id}`, { endReq: Date.now() }); toast('Хід завершено.', true); },
   async longAction(el) {
     const id = myCharId(); const a = el.dataset.a; const st = S.chars[id];
@@ -1061,7 +1122,11 @@ const actions = {
     if (!(await spendAP(1, 'Робота над ціллю'))) return;
     const sk = bestSkill(c, o.skills);
     const target = c.stats[o.stat] + (sk ? sk[1] : 0);
-    const r = d100(); const rank = evalCheck(r, target); const ok = rank >= 2;
+    const watched = xt3In(o.room);
+    const rr = watched ? [d100(), d100()] : [d100()];
+    const rks = rr.map(x => evalCheck(x, target)); const wi = watched ? (rks[0] <= rks[1] ? 0 : 1) : 0;
+    const r = rr[wi]; const rank = rks[wi]; const ok = rank >= 2;
+    if (watched) await gmNote(`ДРОН ХТ3 бачив, як ${c.name} працює над «${o.title}» у ${o.room}.`, true);
     UI.lastRoll = { big: pad2(r), label: ok ? 'ПРОГРЕС' : 'НЕ ВДАЛОСЯ', rank, sub: `${o.title}: Інтелект${sk ? ' + ' + sk[0] : ''} = ${target}` };
     if (ok) {
       const n = ((S.goals || {})[o.id] || 0) + (rank === 3 ? 2 : 1);
@@ -1090,7 +1155,8 @@ const actions = {
     const sk = force ? bestSkill(c, ['Атлетика', 'Рукопашний бій']) : bestSkill(c, ['Комп\'ютери', 'Ремонт механізмів', 'Інженерія']);
     const target = (force ? c.stats.str : c.stats.int) + (sk ? sk[1] : 0);
     if (!(await spendAP(1, 'Злом'))) return;
-    const dis = force || r.hard || isLocked(rid);
+    const watched = xt3In(S.chars[id].loc);
+    const dis = force || r.hard || isLocked(rid) || watched;
     const rolls = dis ? [d100(), d100()] : [d100()];
     const ranks = rolls.map(x => evalCheck(x, target));
     const i = dis ? (ranks[0] <= ranks[1] ? 0 : 1) : 0;
@@ -1099,7 +1165,7 @@ const actions = {
     if (!ok) await store.update(`game/chars/${id}`, { stress: clamp((st.stress || 2) + 1, st.minStress || 2, 20) });
     UI.lastRoll = { big: pad2(rolls[i]), label: ok ? 'ДВЕРІ ВІДЧИНЕНО' : 'НЕ ВДАЛОСЯ', rank, sub: `${force ? 'Сила' : 'Інтелект'}${sk ? ' + ' + sk[0] : ''} = ${target}${dis ? ' [−]' : ''}` };
     if (rank === 0) UI.panicPrompt = true;
-    await gmNote(`${ok ? 'УСПІХ' : 'ПРОВАЛ'}: спроба ${what} ${r.id} (${r.name}). Кидок ${rolls.map(pad2).join('/')} проти ${target}${dis ? ' [−]' : ''}.${force ? ' ГУЧНО.' : ''}`, !ok || force || isLocked(rid));
+    await gmNote(`${ok ? 'УСПІХ' : 'ПРОВАЛ'}: спроба ${what} ${r.id} (${r.name}). Кидок ${rolls.map(pad2).join('/')} проти ${target}${dis ? ' [−]' : ''}.${force ? ' ГУЧНО.' : ''}${watched ? ' ДРОН ХТ3 ПОРУЧ.' : ''}`, !ok || force || isLocked(rid) || watched);
     $('#modal').innerHTML = '';
     if (ok) { UI.view = 'loc'; UI.imgIdx = 0; await store.update(`game/chars/${id}`, { loc: rid }); renderMain(true); }
     else toast(force ? 'Двері не піддалися. Шум чути далеко.' : 'Замок не піддався. +1 Стрес');
@@ -1187,7 +1253,7 @@ const actions = {
     const order = seatedOrder();
     if (!order.length) return toast('Ще ніхто не сів за стіл.');
     await store.remove('game/goals');
-    await store.update('game/state', { phase: 'play', round: 1, threat: 0, locks: null, tempLocks: null, proposal: null, autopilot: ST().autopilot ?? true,
+    await store.update('game/state', { robots: Object.fromEntries(ROBOTS.filter(r => r.start && !r.minThreat).map(r => [r.id, { loc: r.start }])), phase: 'play', round: 1, threat: 0, locks: null, tempLocks: null, proposal: null, autopilot: ST().autopilot ?? true,
       turnSec: ST().turnSec || CAMPAIGN.turnSec, engine: UI.tabId, paused: false, endText: null });
     await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: 'Коло 1. Усі системи в нормі. Відпочивайте.', kind: 'greta' });
     await startTurn(order[0]);
