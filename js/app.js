@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221505';
+import { createStore } from './store.js?v=202611221511';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221505';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221505';
+} from './data.js?v=202611221511';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221511';
 
-const VERSION = '202611221505';
+const VERSION = '202611221511';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -404,10 +404,22 @@ function figuresHTML(list, rid) {
 }
 
 // ---------- сховані предмети (бачить лише ведучий) ----------
+// Перехованки: ведучий може випадково розкидати предмети по кімнатах (game/gm/itemRoom)
+const HIDE_SPOTS = {
+  A1: 'під панеллю навігаційного пульта', A2: 'за автоматом із кавою', A3: 'між капсулами 14 і 15, в ніші для шлангів', A4: 'за пластиною стоку в душі',
+  A5: 'у бачку вакуумного туалету', A6: 'на дні ящика з провізією', B1: 'під матрацом Еліс', B2: 'у порожній коробці з-під патронів',
+  B3: 'за решіткою вентиляції над ліжком', B4: 'у шухляді з фотографіями', C1: 'за знімною панеллю стіни коридору', C2: 'у кабель-каналі під підлогою',
+  C3: 'у шафці з вогнегасником', D1: 'серед дрібних деталей на верстаті', D2: 'у холодильнику з препаратами', D3: 'у ніші для запасного шолома',
+  D4: 'під сидінням евакуаційної капсули', N1: 'у старому зарядному доку', N2: 'за щитком розподільника', N3: 'у пожежному щиті', N4: 'між трубами рециркулятора'
+};
+function itemEff(it) {
+  const o = ((S.gm && S.gm.itemRoom) || {})[it.id];
+  return o ? { ...it, room: o.room, spot: o.spot, clue: 'Предмет переховано — підказку придумай сам за місцем.' } : it;
+}
 function itemPos(it) { const p = ((S.gm && S.gm.itemPos) || {})[it.id]; return p ? p : { x: it.x, y: it.y }; }
 function itemFound(it) { return !!(((S.gm && S.gm.itemsFound) || {})[it.id]); }
 function itemMarkersHTML(rid) {
-  const list = (S.items || []).filter(it => it.room === rid);
+  const list = (S.items || []).map(itemEff).filter(it => it.room === rid);
   if (!list.length) return '';
   return `<div class="item-marks">${list.map(it => { const p = itemPos(it); const f = itemFound(it);
     return `<div class="item-mark ${f ? 'found' : ''}" data-item="${it.id}" style="left:${p.x}%;top:${p.y}%">
@@ -416,7 +428,7 @@ function itemMarkersHTML(rid) {
         <p>${esc(it.effect)}</p><small>Підказка: ${esc(it.clue)}</small>${f ? '<i>ЗНАЙДЕНО</i>' : ''}<u>клік — показати гравцям · тягни — перемістити</u></div></div>`; }).join('')}</div>`;
 }
 function itemModal(id) {
-  const it = (S.items || []).find(x => x.id === id); if (!it) return;
+  const it0 = (S.items || []).find(x => x.id === id); if (!it0) return; const it = itemEff(it0);
   const inRoom = seatedOrder().filter(cid => (S.chars[cid] || {}).loc === it.room);
   const f = itemFound(it);
   $('#modal').innerHTML = `<div class="modal-bg" data-act="closeModal"></div><div class="modal item-modal">
@@ -488,7 +500,7 @@ function renderMain(force) {
   let key = UI.view === 'map'
     ? 'map|' + JSON.stringify(S.chars) + JSON.stringify(Object.keys(S.seats || {})) + UI.gmSel + JSON.stringify(ST().robots || {})
     : `loc|${rid}|${UI.imgIdx}|${turnId()}|${JSON.stringify(S.goals || {})}|${ST().phase}|${JSON.stringify(ST().robots || {})}|` + CHARACTERS.map(c => (S.chars[c.id] || {}).loc + (S.seats[c.id] ? S.seats[c.id].name : '')).join(',');
-  if (IS_GM_PAGE) key += JSON.stringify((S.gm && S.gm.itemPos) || {}) + JSON.stringify((S.gm && S.gm.itemsFound) || {}) + (S.items ? S.items.length : 0);
+  if (IS_GM_PAGE) key += JSON.stringify((S.gm && S.gm.itemPos) || {}) + JSON.stringify((S.gm && S.gm.itemsFound) || {}) + JSON.stringify((S.gm && S.gm.itemRoom) || {}) + (S.items ? S.items.length : 0);
   if (!force && key === UI.mainKey) return;
   UI.mainKey = key;
   const tabs = `<div class="viewtabs"><button class="tog ${UI.view === 'loc' ? 'on' : ''}" data-act="view" data-v="loc">ЛОКАЦІЯ</button><button class="tog ${UI.view === 'map' ? 'on' : ''}" data-act="view" data-v="map">МАПА</button></div>`;
@@ -974,6 +986,13 @@ function musicBtn() {
   b.title = UI.musicMute ? 'Увімкнути музику' : 'Вимкнути музику';
   b.classList.toggle('off', !!UI.musicMute);
 }
+function itemsPanelHTML() {
+  if (!S.items || !S.items.length) return '';
+  const moved = !!((S.gm && S.gm.itemRoom) && Object.keys(S.gm.itemRoom).length);
+  const list = S.items.map(itemEff).sort((a, b) => a.room.localeCompare(b.room)).map(it => `<span class="${itemFound(it) ? 'found' : ''}" title="${esc(it.name)} — ${esc(it.spot)}"><b>${esc(it.room)}</b> ${esc(it.id)}</span>`).join('');
+  return `<h4>ПРЕДМЕТИ ${moved ? '<span class="muted">· переховані</span>' : ''}</h4><div class="item-where">${list}</div>
+    <div class="row"><button class="ghost small" data-act="itemsShuffle">${UI.shuffleArm ? 'ТОЧНО? НАТИСНІТЬ ЩЕ РАЗ' : '⟳ ПЕРЕХОВАТИ ВИПАДКОВО'}</button>${moved ? '<button class="ghost small" data-act="itemsRestore">ЯК У СЦЕНАРІЇ</button>' : ''}</div>`;
+}
 function musicPanelHTML() {
   const m = ST().music || { auto: true };
   const btn = (key, label) => { const on = key === 'auto' ? m.auto : (!m.auto && (m.track || null) === key); return `<button class="tog ${on ? 'on' : ''}" data-act="musicSet" data-t="${key === null ? 'none' : key}">${label}</button>`; };
@@ -1069,6 +1088,7 @@ function renderGMControls() {
     <div class="row"><label class="chk"><input type="checkbox" id="gretaVoice" checked> озвучити</label><button class="primary small" data-act="gretaSay">СКАЗАТИ</button><button class="ghost small" data-act="gretaClear">ПРИБРАТИ</button></div>
     ${slidesPanelHTML()}
     ${musicPanelHTML()}
+    ${itemsPanelHTML()}
     <h4>КАТ-СЦЕНИ</h4>
     <div class="cuts">${cuts.length ? cuts.map(([k, v]) => `<div class="cutrow"><span>${esc(v.title)}</span><button class="ghost xs" data-act="playCut" data-k="${k}">▶ ДЛЯ ВСІХ</button><button class="ghost xs" data-act="delCut" data-k="${k}">✕</button></div>`).join('') : '<div class="muted">Додайте відео (YouTube або пряме посилання .mp4).</div>'}</div>
     <div class="row"><input id="cutTitle" placeholder="Назва"><input id="cutUrl" placeholder="URL відео"><button class="ghost small" data-act="addCut">+</button></div>
@@ -1367,7 +1387,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221505')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221511')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); musicSync(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
@@ -1469,7 +1489,7 @@ const actions = {
   tab(el) { setTab(el.dataset.t); },
   revealClose() { $('#revealBox').innerHTML = ''; },
   async itemReveal(el) {
-    const it = S.items.find(x => x.id === el.dataset.id); if (!it) return;
+    const it0 = S.items.find(x => x.id === el.dataset.id); if (!it0) return; const it = itemEff(it0);
     const to = el.dataset.to === 'all' ? 'all' : seatedOrder().filter(cid => (S.chars[cid] || {}).loc === it.room);
     await store.update('game/state', { reveal: { id: it.id, name: it.name, effect: it.effect, to, ts: Date.now() } });
     await store.update('game/gm/itemsFound', { [it.id]: { ts: Date.now(), to: to === 'all' ? 'all' : to.join(',') } });
@@ -1590,6 +1610,20 @@ const actions = {
   async slidesNext() { const sl = ST().slides; if (sl && sl.i < INTRO_SLIDES.length - 1) await store.update('game/state/slides', { i: sl.i + 1 }); },
   async slidesPrev() { const sl = ST().slides; if (sl && sl.i > 0) await store.update('game/state/slides', { i: sl.i - 1 }); },
   async slidesStop() { await store.update('game/state', { slides: null }); },
+  async itemsShuffle() {
+    if (!UI.shuffleArm) { UI.shuffleArm = true; renderGMControls(); setTimeout(() => { UI.shuffleArm = false; renderGMControls(); }, 4000); return; }
+    UI.shuffleArm = false;
+    const rooms = Object.keys(HIDE_SPOTS).sort(() => Math.random() - 0.5);
+    const itemRoom = {}, itemPos = {};
+    S.items.forEach((it, i) => {
+      const room = rooms[i % rooms.length];
+      itemRoom[it.id] = { room, spot: HIDE_SPOTS[room] };
+      itemPos[it.id] = { x: 15 + rnd(70), y: 38 + rnd(42) };
+    });
+    await store.update('game/gm', { itemRoom, itemPos, itemsFound: null });
+    toast('Предмети переховано. Мітки — на нових місцях.', true);
+  },
+  async itemsRestore() { await store.update('game/gm', { itemRoom: null, itemPos: null, itemsFound: null }); toast('Предмети повернуто на місця зі сценарію.', true); },
   async musicSet(el) { const t = el.dataset.t; await store.update('game/state', { music: t === 'auto' ? { auto: true } : { auto: false, track: t === 'none' ? null : t } }); },
   gmHear(el) { UI.gmHear = el.checked; UI.audioOK = true; musicSync(); },
   musicMute() { UI.musicMute = !UI.musicMute; localStorage.setItem('kvitka-mute', UI.musicMute ? '1' : '0'); musicSync(); musicBtn(); },

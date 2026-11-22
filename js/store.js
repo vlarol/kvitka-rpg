@@ -1,5 +1,5 @@
 // Шар даних: Firebase Realtime Database або демо-режим (localStorage, синхронізація між вкладками).
-import { firebaseConfig } from './config.js?v=202611221505';
+import { firebaseConfig } from './config.js?v=202611221511';
 
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
 

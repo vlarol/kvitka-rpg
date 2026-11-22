@@ -778,3 +778,7 @@ html.mobile .rc-cap { bottom: 11vh; }
 html.mobile .music-btn { bottom: auto; top: 54px; right: 8px; }
 .watch ~ .music-btn, body:has(.watch) .music-btn { bottom: 26px; }
 .music-row .tog { flex: 1; }
+.item-where { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+.item-where span { font: 500 11px var(--mono); padding: 2px 6px; border: 1px solid var(--line); color: var(--muted); }
+.item-where span b { color: var(--orange); font-weight: 600; }
+.item-where span.found { opacity: .45; text-decoration: line-through; }
