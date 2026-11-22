@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221246';
+import { createStore } from './store.js?v=202611221250';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221246';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES } from './campaign.js?v=202611221246';
+} from './data.js?v=202611221250';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221250';
 
-const VERSION = '202611221246';
+const VERSION = '202611221250';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -310,7 +310,8 @@ function endScreen() {
   if (!el) return;
   if (ph !== 'won' && ph !== 'lost') { el.innerHTML = ''; return; }
   const won = ph === 'won';
-  el.innerHTML = `<div class="endscreen ${won ? 'won' : 'lost'}"><small>${won ? 'ЕКІПАЖ ПЕРЕМІГ' : 'ҐРЕТА ПЕРЕМОГЛА'}</small>
+  const bg = sceneImg(ST().endScene || (won ? 'win' : 'lose'));
+  el.innerHTML = `<div class="endscreen ${won ? 'won' : 'lost'}" style="--bg:url('${bg}')"><small>${won ? 'ЕКІПАЖ ПЕРЕМІГ' : 'ҐРЕТА ПЕРЕМОГЛА'}</small>
     <h1>${won ? 'РУЧНЕ КЕРУВАННЯ' : 'ПОВНИЙ КОНТРОЛЬ'}</h1>
     <p>${esc(ST().endText || (won ? 'Ядро Ґрети вимкнено. STS-187 знову ваш. Надовго?' : THREAT_STAGES[10].text))}</p>
     <div class="ring mode-${won ? 'evade' : 'control'}"><span></span></div>
@@ -733,7 +734,7 @@ function renderTray() {
 
 async function bootPlayer() {
   await store.ensureAnon();
-  subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderPlayer(); }));
+  subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderRoundCut(); renderPlayer(); }));
   subs.push(store.on('game/seats', v => {
     S.seats = v || {};
     const id = myCharId();
@@ -856,6 +857,40 @@ function renderCrew() {
   }).join('');
 }
 
+// ---------- кат-сцена кінця кола ----------
+function renderRoundCut(force) {
+  if (IS_GM_PAGE) return;
+  const rc = S.state && S.state.roundCut;
+  if (!rc || !rc.slides || !rc.slides.length) return;
+  if (rc.ts === UI.rcTs && !force) return;
+  const first = UI.rcTs === undefined; UI.rcTs = rc.ts;
+  if (first && Date.now() - rc.ts > 60000) return;          // після перезавантаження старе не показуємо
+  UI.rcI = 0; showRoundSlide();
+}
+function showRoundSlide() {
+  const rc = ST().roundCut; if (!rc) return;
+  let el = document.getElementById('rcut');
+  if (UI.rcI >= rc.slides.length) { if (el) { el.classList.add('out'); setTimeout(() => el.remove(), 700); } return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'rcut'; el.dataset.act = 'rcNext';
+    el.innerHTML = `<div class="rc-stage"></div><div class="rc-ui"><span class="rc-dots"></span><button class="ghost small" data-act="rcClose">✕</button></div><div class="rc-hint">торкніться, щоб далі</div>`;
+    document.body.appendChild(el);
+    rc.slides.forEach(x => { const im = new Image(); im.src = sceneImg(x.id); });
+  }
+  const sl = rc.slides[UI.rcI];
+  const fr = document.createElement('div'); fr.className = `rc-slide k-${sl.kind || 'event'}`;
+  fr.innerHTML = `<div class="rc-fallback">${ringHTML(sl.kind === 'greta' ? 'control' : 'assist')}</div>
+    <img src="${sceneImg(sl.id)}" alt="" onerror="this.remove()">
+    <div class="rc-cap"><small>${esc(sl.title || '')}</small><p>${esc(sl.text || '')}</p></div>`;
+  const stage = el.querySelector('.rc-stage'); stage.appendChild(fr);
+  requestAnimationFrame(() => requestAnimationFrame(() => fr.classList.add('on')));
+  [...stage.children].slice(0, -1).forEach(o => { o.classList.remove('on'); setTimeout(() => o.remove(), 1000); });
+  el.querySelector('.rc-dots').innerHTML = rc.slides.map((_, i) => `<i class="${i === UI.rcI ? 'on' : i < UI.rcI ? 'done' : ''}"></i>`).join('');
+  if (navigator.vibrate && sl.kind === 'bad') navigator.vibrate([60, 40, 60]);
+  clearTimeout(UI.rcT);
+  UI.rcT = setTimeout(() => { UI.rcI++; showRoundSlide(); }, clamp(4500 + (sl.text || '').length * 45, 6000, 12000));
+}
+
 // ---------- вступ: слайди ----------
 function renderSlides() {
   if (IS_GM_PAGE) return;
@@ -884,7 +919,7 @@ function renderSlides() {
 function slidesPanelHTML() {
   const sl = S.state && S.state.slides;
   const n = INTRO_SLIDES.length;
-  if (!sl) return `<h4>ВСТУП · СЛАЙДИ</h4><div class="row"><button class="primary small" data-act="slidesStart">▶ ПОКАЗАТИ ВСІМ (${n})</button></div>`;
+  if (!sl) return `<h4>ВСТУП · СЛАЙДИ</h4><div class="row"><button class="primary small" data-act="slidesStart">▶ ПОКАЗАТИ ВСІМ (${n})</button><button class="ghost small" data-act="rcTest" title="Показати гравцям приклад кат-сцени кінця кола">ТЕСТ КАТ-СЦЕНИ КОЛА</button></div>`;
   return `<h4>ВСТУП · СЛАЙДИ <span class="live">НАЖИВО ${sl.i + 1}/${n}</span></h4>
     <div class="slides-thumbs">${INTRO_SLIDES.map((src, i) => `<button class="${i === sl.i ? 'on' : ''}" data-act="slidesGo" data-i="${i}" style="background-image:url('${src}')"><b>${i + 1}</b></button>`).join('')}</div>
     <div class="row"><button class="ghost small" data-act="slidesPrev" ${sl.i ? '' : 'disabled'}>◀ НАЗАД</button><button class="primary small" data-act="slidesNext" ${sl.i < n - 1 ? '' : 'disabled'}>ДАЛІ ▶</button><button class="danger small" data-act="slidesStop">ЗАВЕРШИТИ</button></div>
@@ -1046,6 +1081,7 @@ function campaignPanelHTML() {
       <button class="ghost xs" data-act="goal" data-o="${o.id}" data-d="-1">−</button><button class="ghost xs" data-act="goal" data-o="${o.id}" data-d="1">+</button></div>`).join('')}</div>
     ${prop ? `<div class="proposal"><small>ҐРЕТА ПРОПОНУЄ (кінець кола ${prop.round})</small>${prop.lines.map(l => `<div>${esc(l)}</div>`).join('')}
       <div class="row"><button class="primary xs" data-act="applyProposal">ЗАСТОСУВАТИ</button><button class="ghost xs" data-act="skipProposal">ПРОПУСТИТИ</button></div></div>` : ''}
+    ${st.roundCut ? `<div class="row"><span class="muted">Кат-сцена кола ${st.roundCut.round || ''}: ${st.roundCut.slides.length} кадр.</span><button class="ghost xs" data-act="rcReplay">▶ ПОКАЗАТИ ЩЕ РАЗ</button></div>` : ''}
     ${engineHere ? '' : '<div class="row"><span class="muted">Ходи рахує інша вкладка ведучого.</span><button class="ghost xs" data-act="claimEngine">РАХУВАТИ ТУТ</button></div>'}
     <button class="ghost xs" data-act="campStop">ЗУПИНИТИ КАМПАНІЮ</button>`}`;
 }
@@ -1101,13 +1137,14 @@ function computeRound() {
 
 async function applyRound(p) {
   const st = ST();
-  let threat = clamp((st.threat || 0) + p.add + (p.ev.effect.threat || 0), 0, CAMPAIGN.threatMax);
+  let threat = clamp((st.threat || 0) + p.add + ((p.ev.effect || {}).threat || 0), 0, CAMPAIGN.threatMax);
   let o2 = st.o2 ?? O2_START;
   const upd = {}; const locks = { ...(st.locks || {}) }; const temp = {};
-  const effect = p.ev.effect;
+  const effect = p.ev.effect || {};
+  const cut = [];
   if (effect.o2) o2 += effect.o2;
   if (p.lockRoom) { temp[p.lockRoom] = true; await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: `Кімнату ${p.lockRoom} (${ROOM_BY_ID[p.lockRoom].name}) закрито до кінця наступного кола.`, kind: 'bad' }); }
-  if (effect.lockRandom) { const pool = ROOMS.filter(r => !['C1', 'C2', 'C3', 'OUT'].includes(r.id)); temp[pool[rnd(pool.length)].id] = true; }
+  if (effect.lockRandom) { const pool = ROOMS.filter(r => !['C1', 'C2', 'C3', 'OUT'].includes(r.id)); const lr = pool[rnd(pool.length)]; temp[lr.id] = true; p.randLock = lr.id; }
   // стадії загрози
   let o2Round = 0;
   for (let lvl = 1; lvl <= threat; lvl++) { const sg = THREAT_STAGES[lvl]; if (sg && sg.o2PerRound) o2Round = 30; }
@@ -1115,7 +1152,11 @@ async function applyRound(p) {
   for (let lvl = (st.threat || 0) + 1; lvl <= threat; lvl++) {
     const sg = THREAT_STAGES[lvl]; if (!sg) continue;
     await store.push('game/log', { uid: store.uid, who: `Загроза ${lvl}`, text: sg.text, kind: 'bad' });
+    cut.push({ id: `t${lvl}`, title: `ЗАГРОЗА ${lvl} / ${CAMPAIGN.threatMax}`, text: sg.text, kind: 'bad' });
   }
+  cut.push({ id: p.ev.id || 'e06', title: `КІНЕЦЬ КОЛА ${p.round}`, text: p.ev.text, kind: 'event' });
+  for (const lr of [p.lockRoom, p.randLock].filter(Boolean)) cut.push({ id: 'lock', title: 'ҐРЕТА ЗАЧИНЯЄ ДВЕРІ', text: `${lr} · ${ROOM_BY_ID[lr].name} — закрито до кінця наступного кола.`, kind: 'bad' });
+  cut.push({ id: 'greta', title: 'ҐРЕТА', text: p.say, kind: 'greta' });
   await store.push('game/log', { uid: store.uid, who: `Коло ${p.round}`, text: p.ev.text, kind: 'event' });
   // стрес від події
   const order = seatedOrder();
@@ -1123,8 +1164,9 @@ async function applyRound(p) {
   for (const cid of stressIds) { const c = S.chars[cid] || {}; await store.update(`game/chars/${cid}`, { stress: clamp((c.stress || 2) + 1, c.minStress || 2, 20) }); }
   Object.assign(upd, { threat, o2: Math.max(0, o2), locks, tempLocks: temp, proposal: null, greta: { text: p.say, voice: true, ts: Date.now() } });
   await store.push('game/log', { uid: store.uid, who: 'Ґрета', text: p.say, kind: 'greta' });
-  if (threat >= CAMPAIGN.threatMax) Object.assign(upd, { phase: 'lost', endText: THREAT_STAGES[10].text, turn: null });
-  else if (o2 <= 0) Object.assign(upd, { phase: 'lost', endText: 'Кисень закінчився. Ґрета вимикає світло в порожніх коридорах.', turn: null });
+  if (threat >= CAMPAIGN.threatMax) Object.assign(upd, { phase: 'lost', endText: THREAT_STAGES[10].text, endScene: 'lose', turn: null });
+  else if (o2 <= 0) Object.assign(upd, { phase: 'lost', endText: 'Кисень закінчився. Ґрета вимикає світло в порожніх коридорах.', endScene: 'o2out', turn: null });
+  upd.roundCut = { ts: Date.now(), round: p.round, slides: cut };
   await store.update('game/state', upd);
   return !(upd.phase === 'lost');
 }
@@ -1198,7 +1240,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221246')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221250')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
@@ -1418,6 +1460,18 @@ const actions = {
   async slidesNext() { const sl = ST().slides; if (sl && sl.i < INTRO_SLIDES.length - 1) await store.update('game/state/slides', { i: sl.i + 1 }); },
   async slidesPrev() { const sl = ST().slides; if (sl && sl.i > 0) await store.update('game/state/slides', { i: sl.i - 1 }); },
   async slidesStop() { await store.update('game/state', { slides: null }); },
+  rcNext(el, e) { UI.rcI++; showRoundSlide(); },
+  rcClose() { clearTimeout(UI.rcT); const el = document.getElementById('rcut'); if (el) el.remove(); },
+  async rcTest() {
+    const ev = ROUND_EVENTS[1];
+    await store.update('game/state', { roundCut: { ts: Date.now(), round: 0, slides: [
+      { id: 't3', title: `ЗАГРОЗА 3 / ${CAMPAIGN.threatMax}`, text: THREAT_STAGES[3].text, kind: 'bad' },
+      { id: ev.id, title: 'КІНЕЦЬ КОЛА (ТЕСТ)', text: ev.text, kind: 'event' },
+      { id: 'lock', title: 'ҐРЕТА ЗАЧИНЯЄ ДВЕРІ', text: 'A2 · Столова і спортзал — закрито до кінця наступного кола.', kind: 'bad' },
+      { id: 'greta', title: 'ҐРЕТА', text: GRETA_LINES[1][1][0], kind: 'greta' }] } });
+    toast('Тестову кат-сцену показано гравцям', true);
+  },
+  async rcReplay() { const rc = ST().roundCut; if (rc) await store.update('game/state/roundCut', { ts: Date.now() }); },
   slidesHide() { UI.slidesHidden = (ST().slides || {}).ts; renderSlides(); },
   skipCut() { UI.dismissedCut = UI.cutTs; $('#cut').innerHTML = ''; },
   closeGreta() { $('#greta').innerHTML = ''; },
