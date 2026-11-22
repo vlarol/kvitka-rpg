@@ -1,12 +1,12 @@
-import { createStore } from './store.js?v=202611221344';
+import { createStore } from './store.js?v=202611221408';
 import {
   CHARACTERS, CHAR_BY_ID, ROOMS, ROOM_BY_ID, STAT_LABELS, SAVE_LABELS,
   PANIC_TABLE, WOUND_TABLE, EVENTS, GRETA_MODES, O2_START, initialChars,
   ROOM_LINKS, ROBOTS, ROBOT_BY_ID, XT2_HINTS
-} from './data.js?v=202611221344';
-import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221344';
+} from './data.js?v=202611221408';
+import { CAMPAIGN, THREAT_STAGES, OBJECTIVES, OBJ_BY_ID, ROUND_EVENTS, GRETA_LINES, LONG_ACTIONS, INTRO_SLIDES, sceneImg } from './campaign.js?v=202611221408';
 
-const VERSION = '202611221344';
+const VERSION = '202611221408';
 // ---------- утиліти ----------
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -762,13 +762,20 @@ function renderTray() {
 async function bootPlayer() {
   await store.ensureAnon();
   subs.push(store.on('game/state', v => { S.state = v; renderSlides(); renderRoundCut(); musicSync(); renderPlayer(); }));
-  subs.push(store.on('game/seats', v => {
-    S.seats = v || {};
+  subs.push(store.on('game/seats', v => { S.seats = v || {}; seatsChanged(); }));
+  function seatsChanged() {
     const id = myCharId();
-    if (id && S._secretFor !== id) {
-      S._secretFor = id;
+    const seatKey = id ? id + ':' + (S.seats[id].uid || '') + ':' + (S.seats[id].ts || '') : null;
+    if (id && S._secretFor !== seatKey) {
+      S._secretFor = seatKey;
       if (S._secretOff) S._secretOff();
-      S._secretOff = store.on(`game/secrets/${id}`, s => {
+      S._secretOff = store.on(`game/secrets/${id}`, (s, err) => {
+        if (err) {                       // доступ ще не підтвердився (щойно сів / місце переписали) — пробуємо ще
+          S._secretFor = null;
+          if ((S._secretRetry = (S._secretRetry || 0) + 1) <= 6) setTimeout(() => { if (S._secretFor === null && myCharId()) seatsChanged(); }, 2500);
+          return;
+        }
+        S._secretRetry = 0;
         const txt = s && s.text;
         if (txt && txt !== S.secret) { UI.secretNew = true; if (S._secretLoaded) toast('Ведучий надіслав вам таємну ціль. Кнопка «ТАЄМНА ЦІЛЬ» угорі.', true); }
         S._secretLoaded = true;
@@ -783,10 +790,11 @@ async function bootPlayer() {
         store.remove(`game/requests/${id}`);
       });
     }
+    if (!id) { S.secret = null; S._secretFor = null; S._chatFor = null; }
     if (!id && $('#playerRoot')) $('#app').innerHTML = '';   // місце звільнили — назад до вибору
     watchMyChat();
     renderPlayer();
-  }));
+  }
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#playerRoot')) { renderMain(); renderSheet(); } }));
   subs.push(store.on('game/log', v => {
     S.log = v || {}; if ($('#log')) $('#log').innerHTML = logHTML(S.log);
@@ -800,9 +808,12 @@ async function bootPlayer() {
 }
 let chatOff = null;
 function watchMyChat() {
-  const id = myCharId(); if (!id || S._chatFor === id) return;
-  S._chatFor = id; if (chatOff) chatOff();
-  chatOff = store.on(`game/chat/${id}`, v => {
+  const id = myCharId(); if (!id) return;
+  const key = id + ':' + (S.seats[id].uid || '') + ':' + (S.seats[id].ts || '');
+  if (S._chatFor === key) return;
+  S._chatFor = key; if (chatOff) chatOff();
+  chatOff = store.on(`game/chat/${id}`, (v, err) => {
+    if (err) { S._chatFor = null; setTimeout(watchMyChat, 2500); return; }
     const prev = Object.keys(S.chat[id] || {}).length;
     S.chat[id] = v || {};
     const list = Object.values(S.chat[id]);
@@ -919,7 +930,7 @@ function renderCrew() {
       <div class="keyrow"><span>КЛЮЧІ</span>${Object.keys(st.keys || {}).map(k => `<button class="ghost xs" data-act="takeKey" data-id="${c.id}" data-room="${k}" title="забрати">${esc(k)} ✕</button>`).join('') || '<i class="muted">—</i>'}
         <select id="key-${c.id}"><option value="">+ ключ</option>${ROOMS.filter(r => r.access !== 'all' && !r.access.includes(c.id)).map(r => `<option value="${r.id}">${r.id} · ${esc(r.name)}</option>`).join('')}</select><button class="ghost xs" data-act="giveKey" data-id="${c.id}">дати</button></div>
       <details data-sec="${c.id}" ${UI.openSec.has(c.id) ? 'open' : ''}><summary>ТАЄМНА ЦІЛЬ ${sec ? '✓' : ''}</summary><textarea id="sec-${c.id}" rows="5" placeholder="Текст побачить тільки гравець цього персонажа">${esc(sec)}</textarea>
-        <button class="ghost small" data-act="saveSecret" data-id="${c.id}">ЗБЕРЕГТИ</button></details>
+        <div class="row"><button class="ghost small" data-act="saveSecret" data-id="${c.id}">ЗБЕРЕГТИ</button><span class="muted small" id="secst-${c.id}">${sec ? 'надіслано гравцю ✓' : 'зберігається автоматично'}</span></div></details>
       ${seat ? `<button class="ghost xs" data-act="setTurn" data-id="${c.id}">дати хід</button> <button class="ghost xs" data-act="kick" data-id="${c.id}">звільнити місце</button>` : ''}
     </div>`;
   }).join('');
@@ -1356,7 +1367,7 @@ async function bootGM() {
     }
   }
   S.isAdmin = true;
-  try { S.items = (await import('./gm-items.js?v=202611221344')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
+  try { S.items = (await import('./gm-items.js?v=202611221408')).ITEMS; } catch (e) { console.warn('items', e); S.items = []; }
   subs.push(store.on('game/state', v => { S.state = v; renderGM(); musicSync(); }));
   subs.push(store.on('game/seats', v => { S.seats = v || {}; if ($('#gmRoot')) renderCrew(); }));
   subs.push(store.on('game/chars', v => { S.chars = v || {}; if ($('#gmRoot')) { renderMain(); renderCrew(); } }));
@@ -1681,7 +1692,7 @@ const actions = {
   gmChat(el) { UI.gmChat = el.dataset.id; UI.chatSeen[UI.gmChat] = Object.keys(S.chat[UI.gmChat] || {}).length; renderGMControls(); },
   async gStress(el) { const st = S.chars[el.dataset.id]; await store.update(`game/chars/${el.dataset.id}`, { stress: clamp((st.stress ?? 2) + +el.dataset.d, st.minStress || 2, 20) }); },
   async gMin(el) { const st = S.chars[el.dataset.id]; const m = clamp((st.minStress || 2) + 1, 2, 20); await store.update(`game/chars/${el.dataset.id}`, { minStress: m, stress: Math.max(m, st.stress || 2) }); },
-  async saveSecret(el) { const id = el.dataset.id; await store.set(`game/secrets/${id}`, { text: $('#sec-' + id).value.trim() }); },
+  async saveSecret(el) { const id = el.dataset.id; await saveSecretText(id); },
   async kick(el) { await store.remove(`game/seats/${el.dataset.id}`); },
   async gretaSay() {
     const text = $('#gretaText').value.trim(); if (!text) return;
@@ -1739,6 +1750,16 @@ document.addEventListener('toggle', e => {
   if (!d.matches || !d.matches('details[data-sec]')) return;
   if (d.open) UI.openSec.add(d.dataset.sec); else UI.openSec.delete(d.dataset.sec);
 }, true);
+async function saveSecretText(id) {
+  const ta = $('#sec-' + id); if (!ta) return;
+  await store.set(`game/secrets/${id}`, { text: ta.value.trim(), ts: Date.now() });
+  const st = $('#secst-' + id); if (st) st.textContent = ta.value.trim() ? 'надіслано гравцю ✓' : 'очищено';
+}
+document.addEventListener('input', e => {        // таємна ціль зберігається сама, щойно ведучий перестав друкувати
+  const ta = e.target.closest && e.target.closest('textarea[id^=sec-]'); if (!ta || !IS_GM_PAGE) return;
+  const id = ta.id.slice(4); const st = $('#secst-' + id); if (st) st.textContent = 'зберігаю…';
+  clearTimeout(UI['secT' + id]); UI['secT' + id] = setTimeout(() => saveSecretText(id), 900);
+});
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'chatText') actions.chatSend(); });
 document.addEventListener('keydown', e => {
   if (!IS_GM_PAGE || !ST().slides || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;

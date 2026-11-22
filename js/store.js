@@ -1,5 +1,5 @@
 // Шар даних: Firebase Realtime Database або демо-режим (localStorage, синхронізація між вкладками).
-import { firebaseConfig } from './config.js?v=202611221344';
+import { firebaseConfig } from './config.js?v=202611221408';
 
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
 
@@ -38,7 +38,7 @@ async function firebaseStore(opts) {
     on(path, cb, limit) {
       let r = D.ref(db, path);
       if (limit) r = D.query(r, D.limitToLast(limit));
-      return D.onValue(r, snap => cb(snap.val()), err => { console.warn('read', path, err.message); cb(null); });
+      return D.onValue(r, snap => cb(snap.val()), err => { console.warn('read', path, err.message); cb(null, err); });
     },
     set: (p, v) => D.set(D.ref(db, p), v),
     update: (p, v) => D.update(D.ref(db, p), v),

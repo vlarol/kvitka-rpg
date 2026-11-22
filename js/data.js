@@ -97,7 +97,7 @@ for (const r of ROOMS) {
   r.access = ACCESS[r.id] || 'all';
   r.hard = HARD.includes(r.id);
   if (r.id === 'OUT') r.needFrom = 'D3';
-  r.imgs = (r.imgs || []).map(f => `assets/rooms/${f}.jpg?v=202611221344`);   // ?v= оновлює tools/bump.sh, щоб браузер узяв нову картинку
+  r.imgs = (r.imgs || []).map(f => `assets/rooms/${f}.jpg?v=202611221408`);   // ?v= оновлює tools/bump.sh, щоб браузер узяв нову картинку
   if (!r.anchor) { const [l, t, w, h] = r.rects[0]; r.anchor = [l + w / 2, t + h / 2]; }
 }
 export const ROOM_BY_ID = Object.fromEntries(ROOMS.map(r => [r.id, r]));
