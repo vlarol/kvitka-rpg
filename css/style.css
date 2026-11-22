@@ -664,3 +664,12 @@ html.mobile .figures { transform: translateZ(0); }
 .slides-thumbs button.on { border-color: var(--orange); opacity: 1; box-shadow: 0 0 0 1px var(--orange); }
 .slides-thumbs b { position: absolute; left: 4px; top: 2px; font: 700 10px var(--mono); color: #fff; text-shadow: 0 0 4px #000; }
 @media (orientation: portrait) { #slides::before { content: 'ПОВЕРНІТЬ ТЕЛЕФОН ГОРИЗОНТАЛЬНО'; position: absolute; left: 0; right: 0; bottom: 8vh; z-index: 2; text-align: center; font: 500 10px var(--mono); letter-spacing: .25em; color: rgba(255,255,255,.45); } }
+
+/* кнопка «сховати екіпаж» */
+.loc-eye { position: absolute; right: 16px; top: 14px; z-index: 6; background: rgba(10,12,14,.72); }
+.player .loc-next, .loc:has(.loc-eye) .loc-next { top: 54px; }
+.gmroot .loc:has(.loc-eye) .loc-next, #gmRoot .loc:has(.loc-eye) .loc-next { top: 94px; }
+.loc .figures { transition: opacity .4s ease; }
+.loc.nofigs .figures, .loc.nofigs .loc-here, .loc.nofigs .xt2-btn { opacity: 0; pointer-events: none; }
+html.mobile .player .loc-eye { right: 10px; top: 62px; min-height: 36px; }
+html.mobile .player .loc:has(.loc-eye) .loc-next { top: 106px; }
